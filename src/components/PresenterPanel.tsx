@@ -13,6 +13,7 @@ interface PresenterPanelProps {
   elapsed: number;
   paused: boolean;
   recording: boolean;
+  processing: boolean;
   microphone: string;
   inputLevel: number;
   sections: RecordingSection[];
@@ -24,7 +25,7 @@ interface PresenterPanelProps {
   retakeSection: (id: string) => void;
 }
 
-export function PresenterPanel({ elapsed, paused, recording, microphone, inputLevel, sections, retakeSectionId, close, removeSection, replaySection, clearSections, retakeSection }: PresenterPanelProps) {
+export function PresenterPanel({ elapsed, paused, recording, processing, microphone, inputLevel, sections, retakeSectionId, close, removeSection, replaySection, clearSections, retakeSection }: PresenterPanelProps) {
   const { slides, slideIndex, theme } = useAppStore();
   const [playingSectionId, setPlayingSectionId] = useState<string | null>(null);
   const [playingPreviewUrl, setPlayingPreviewUrl] = useState<string | null>(null);
@@ -76,13 +77,13 @@ export function PresenterPanel({ elapsed, paused, recording, microphone, inputLe
     </section>
 
     <section className="recording-timeline" aria-label="Recording timeline">
-      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording}>Clear all</button>}</span></div>
+      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording || processing}>Clear all</button>}</span></div>
       {sections.length ? <div className="timeline-sections">{sections.map((section, index) => <article className={retakeSectionId === section.id ? "selected" : ""} key={section.id}>
         <span className="section-index">{index + 1}</span>
         <div><b>Section {index + 1}</b><small>Slide {section.slide + 1} · {clock(section.duration)}</small></div>
         <button onClick={() => openPlayback(section.id)} disabled={recording || loadingSectionId !== null || (!section.previewUrl && !section.videoPath)} title={`Replay section ${index + 1}`} aria-label={`Replay section ${index + 1}`}>{loadingSectionId === section.id ? <LoaderCircle className="spin" /> : <CirclePlay />}</button>
-        <button onClick={() => retakeSection(section.id)} disabled={recording} title={`Re-record section ${index + 1}`} aria-label={`Re-record section ${index + 1}`}><RotateCcw /></button>
-        <button onClick={() => removeSection(section.id)} disabled={recording} title={`Remove section ${index + 1}`} aria-label={`Remove section ${index + 1}`}><Trash2 /></button>
+        <button onClick={() => retakeSection(section.id)} disabled={recording || processing} title={`Re-record section ${index + 1}`} aria-label={`Re-record section ${index + 1}`}><RotateCcw /></button>
+        <button onClick={() => removeSection(section.id)} disabled={recording || processing} title={`Remove section ${index + 1}`} aria-label={`Remove section ${index + 1}`}><Trash2 /></button>
       </article>)}</div> : <div className="timeline-empty"><Scissors /><span><b>Record in sections</b><small>Stop after each part. You can remove or re-record it later.</small></span></div>}
       {playingSection && playingPreviewUrl && <div className="section-playback-backdrop" role="presentation" onClick={closePlayback}>
         <div className="section-playback" role="dialog" aria-modal="true" aria-label={`Section ${sections.indexOf(playingSection) + 1} recorded preview`} onClick={(event) => event.stopPropagation()}>

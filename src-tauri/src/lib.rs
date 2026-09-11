@@ -612,6 +612,8 @@ fn assemble_recording_sections(
         .join("\n");
     fs::write(&list_path, list).map_err(|error| error.to_string())?;
     let output = exports.join(format!("{timeline_id}.mp4"));
+    let pending_output = exports.join(format!("{timeline_id}-building.mp4"));
+    let _ = fs::remove_file(&pending_output);
     let mut last_error = "FFmpeg was not found. Install FFmpeg and try again".to_string();
     for program in [
         "ffmpeg",
@@ -637,11 +639,18 @@ fn assemble_recording_sections(
                 "-movflags",
                 "+faststart",
             ])
-            .arg(&output)
+            .arg(&pending_output)
             .status()
         {
             Ok(status) if status.success() => {
                 let _ = fs::remove_file(&list_path);
+                #[cfg(target_os = "windows")]
+                if output.exists() {
+                    fs::remove_file(&output).map_err(|error| error.to_string())?;
+                }
+                fs::rename(&pending_output, &output).map_err(|error| {
+                    format!("Could not publish the assembled recording: {error}")
+                })?;
                 return Ok(output.to_string_lossy().into_owned());
             }
             Ok(_) => {
@@ -656,6 +665,7 @@ fn assemble_recording_sections(
         }
     }
     let _ = fs::remove_file(&list_path);
+    let _ = fs::remove_file(&pending_output);
     Err(last_error)
 }
 

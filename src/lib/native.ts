@@ -12,6 +12,7 @@ export interface RecordingTimeline {
   sections: RecordingSection[];
   recordingFiles: string[];
   videoPath: string | null;
+  videoSources?: string[];
 }
 
 const timelineStorageKey = (settingsFolder: string | null, presentationFile: string | null) => `presenta:timeline:${settingsFolder ?? "draft"}:${presentationFile ?? "presentation.md"}`;
