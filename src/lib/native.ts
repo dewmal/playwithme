@@ -1,12 +1,20 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { CellOutput, Drawing, SessionData } from "../types";
+import type { CellOutput, Drawing, RecordingSection, SessionData } from "../types";
 
 export type SettingsLocation = { mode: "project" | "home" | "cache" | "custom"; customRoot?: string };
 export interface PresentationProject { folder: string; settingsFolder: string; presentations: string[] }
 export interface OpenedPresentation extends PresentationProject {
   presentationFile: string; markdown: string; drawings: Drawing[]; outputs: Record<string, CellOutput>;
 }
+export interface RecordingTimeline {
+  timelineId: string;
+  sections: RecordingSection[];
+  recordingFiles: string[];
+  videoPath: string | null;
+}
+
+const timelineStorageKey = (settingsFolder: string | null, presentationFile: string | null) => `presenta:timeline:${settingsFolder ?? "draft"}:${presentationFile ?? "presentation.md"}`;
 
 export async function resolveSettingsFolder(folder: string, location: SettingsLocation): Promise<string> {
   if (!isTauri()) return "";
@@ -88,6 +96,41 @@ export async function assembleRecordingSections(settingsFolder: string | null, s
   if (sources.length === 1) return sources[0];
   if (!settingsFolder || !isTauri()) return sources.at(-1) ?? null;
   return invoke<string>("assemble_recording_sections", { settingsFolder, sources, timelineId });
+}
+
+export async function loadRecordingTimeline(settingsFolder: string | null, presentationFile: string | null): Promise<RecordingTimeline | null> {
+  if (!presentationFile) return null;
+  if (!settingsFolder || !isTauri()) {
+    const saved = localStorage.getItem(timelineStorageKey(settingsFolder, presentationFile));
+    return saved ? JSON.parse(saved) as RecordingTimeline : null;
+  }
+  const saved = await invoke<Omit<RecordingTimeline, "sections"> & { sections: Array<Omit<RecordingSection, "previewUrl">> } | null>("load_recording_timeline", { settingsFolder, presentationFile });
+  return saved ? { ...saved, sections: saved.sections.map((section) => ({ ...section, previewUrl: null })) } : null;
+}
+
+export async function saveRecordingTimeline(settingsFolder: string | null, presentationFile: string | null, timeline: RecordingTimeline) {
+  if (!presentationFile) return;
+  const stored = { ...timeline, sections: timeline.sections.map(({ previewUrl: _previewUrl, ...section }) => section) };
+  if (!settingsFolder || !isTauri()) {
+    localStorage.setItem(timelineStorageKey(settingsFolder, presentationFile), JSON.stringify(stored));
+    return;
+  }
+  await invoke("save_recording_timeline", { settingsFolder, presentationFile, timeline: stored });
+}
+
+export async function loadRecordingPreview(settingsFolder: string | null, videoPath: string): Promise<Blob | null> {
+  if (!settingsFolder || !isTauri()) return null;
+  const bytes = await invoke<ArrayBuffer>("load_recording_video", { settingsFolder, videoPath });
+  return new Blob([bytes], { type: "video/mp4" });
+}
+
+export async function clearRecordingTimeline(settingsFolder: string | null, presentationFile: string | null) {
+  if (!presentationFile) return;
+  if (!settingsFolder || !isTauri()) {
+    localStorage.removeItem(timelineStorageKey(settingsFolder, presentationFile));
+    return;
+  }
+  await invoke("clear_recording_timeline", { settingsFolder, presentationFile });
 }
 
 export async function openMicrophoneSettings() {

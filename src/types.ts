@@ -30,6 +30,7 @@ export interface RecordingSection {
   slide: number;
   step: number;
   videoPath: string | null;
+  previewUrl: string | null;
 }
 
 export interface CameraLayout {

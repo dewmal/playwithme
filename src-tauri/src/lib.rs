@@ -465,6 +465,111 @@ fn run_ffmpeg(input: &Path, output: &Path) -> Result<(), String> {
     Err("FFmpeg was not found. Install FFmpeg and record the session again".into())
 }
 
+fn recording_timeline_path(settings: &Path, presentation_file: &str) -> PathBuf {
+    presentation_state_folder(settings, presentation_file).join("recording-timeline.json")
+}
+
+#[tauri::command]
+fn load_recording_timeline(
+    settings_folder: String,
+    presentation_file: String,
+) -> Result<Value, String> {
+    validate_presentation_file(&presentation_file)?;
+    let settings = settings_path(&settings_folder)?;
+    let path = recording_timeline_path(&settings, &presentation_file);
+    if !path.exists() {
+        return Ok(Value::Null);
+    }
+    let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_recording_timeline(
+    settings_folder: String,
+    presentation_file: String,
+    timeline: Value,
+) -> Result<(), String> {
+    validate_presentation_file(&presentation_file)?;
+    if !timeline.is_object() {
+        return Err("The recording timeline is invalid".into());
+    }
+    let settings = settings_path(&settings_folder)?;
+    let path = recording_timeline_path(&settings, &presentation_file);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&timeline).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn validated_recording_path(exports: &Path, value: &str) -> Result<PathBuf, String> {
+    let allowed_root = exports.canonicalize().map_err(|error| error.to_string())?;
+    let path = PathBuf::from(value)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let is_mp4 = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp4"));
+    if !path.starts_with(allowed_root) || !is_mp4 {
+        return Err("The recording is outside this project's exports folder".into());
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+fn load_recording_video(
+    settings_folder: String,
+    video_path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let settings = settings_path(&settings_folder)?;
+    let path = validated_recording_path(&settings.join("exports"), &video_path)?;
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+fn clear_recording_timeline(
+    settings_folder: String,
+    presentation_file: String,
+) -> Result<(), String> {
+    validate_presentation_file(&presentation_file)?;
+    let settings = settings_path(&settings_folder)?;
+    let manifest_path = recording_timeline_path(&settings, &presentation_file);
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let exports = settings.join("exports");
+    if let Some(files) = manifest.get("recordingFiles").and_then(Value::as_array) {
+        for value in files.iter().filter_map(Value::as_str) {
+            if let Ok(path) = validated_recording_path(&exports, value) {
+                let session_id = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(str::to_owned);
+                let _ = fs::remove_file(path);
+                if let Some(session_id) = session_id {
+                    let _ = fs::remove_dir_all(settings.join("sessions").join(session_id));
+                }
+            }
+        }
+    }
+    if let Some(value) = manifest.get("videoPath").and_then(Value::as_str) {
+        if let Ok(path) = validated_recording_path(&exports, value) {
+            let _ = fs::remove_file(path);
+        }
+    }
+    fs::remove_file(manifest_path).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn assemble_recording_sections(
     settings_folder: String,
@@ -644,6 +749,10 @@ pub fn run() {
             create_presentation,
             save_presentation,
             save_session,
+            load_recording_timeline,
+            save_recording_timeline,
+            load_recording_video,
+            clear_recording_timeline,
             assemble_recording_sections,
             write_binary,
             copy_video,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
-import { assembleRecordingSections, saveSession } from "../lib/native";
+import { assembleRecordingSections, clearRecordingTimeline, loadRecordingPreview, loadRecordingTimeline, saveRecordingTimeline, saveSession } from "../lib/native";
 import type { CameraLayout, RecordingSection, SessionData } from "../types";
 
 const VIDEO_WIDTH = 3840;
@@ -25,6 +25,7 @@ export function useRecorder() {
   const [paused, setPaused] = useState(false);
   const [lastVideoPath, setLastVideoPath] = useState<string | null>(null);
   const [sections, setSections] = useState<RecordingSection[]>([]);
+  const sectionsRef = useRef<RecordingSection[]>([]);
   const [retakeSectionId, setRetakeSectionId] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
@@ -50,8 +51,9 @@ export function useRecorder() {
   const sessionStartedAt = useRef(0);
   const sectionStartedAt = useRef({ slide: 0, step: 0 });
   const timelineId = useRef(`timeline-${Date.now()}`);
+  const recordingFiles = useRef<string[]>([]);
   const store = useAppStore();
-  const deckKey = useRef(`${store.folder ?? ""}:${store.presentationFile ?? ""}`);
+  const deckKey = useRef("");
 
   const updateElapsed = () => setElapsed(Math.floor((accumulatedMs.current + performance.now() - activeStartedAt.current) / 1000));
   const startTimer = () => { clearInterval(timer.current); timer.current = window.setInterval(updateElapsed, 250); };
@@ -229,18 +231,36 @@ export function useRecorder() {
       audioContext.current?.close().catch(() => undefined);
       clearInterval(timer.current);
       clearTimeout(frameTimer.current);
+      sectionsRef.current.forEach((section) => { if (section.previewUrl) URL.revokeObjectURL(section.previewUrl); });
     };
   }, []);
 
+  useEffect(() => { sectionsRef.current = sections; }, [sections]);
+
   useEffect(() => {
-    const nextKey = `${store.folder ?? ""}:${store.presentationFile ?? ""}`;
+    const nextKey = `${store.folder ?? ""}:${store.settingsFolder ?? ""}:${store.presentationFile ?? ""}`;
     if (nextKey === deckKey.current) return;
+    sectionsRef.current.forEach((section) => { if (section.previewUrl) URL.revokeObjectURL(section.previewUrl); });
+    sectionsRef.current = [];
     deckKey.current = nextKey;
     timelineId.current = `timeline-${Date.now()}`;
+    recordingFiles.current = [];
     setSections([]);
     setRetakeSectionId(null);
     setLastVideoPath(null);
-  }, [store.folder, store.presentationFile]);
+    let cancelled = false;
+    loadRecordingTimeline(store.settingsFolder, store.presentationFile).then((saved) => {
+      if (cancelled || deckKey.current !== nextKey || !saved) return;
+      timelineId.current = saved.timelineId || `timeline-${Date.now()}`;
+      recordingFiles.current = saved.recordingFiles?.length
+        ? saved.recordingFiles
+        : saved.sections.flatMap((section) => section.videoPath ? [section.videoPath] : []);
+      sectionsRef.current = saved.sections;
+      setSections(saved.sections);
+      setLastVideoPath(saved.videoPath);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [store.folder, store.settingsFolder, store.presentationFile]);
 
   const createSlideStream = async (resetPresentation = false) => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
@@ -372,28 +392,79 @@ export function useRecorder() {
       const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
       const videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video);
-      const section: RecordingSection = { id: retakeSectionId ?? `section-${Date.now()}`, duration, ...sectionStartedAt.current, videoPath };
+      if (videoPath && !recordingFiles.current.includes(videoPath)) recordingFiles.current.push(videoPath);
+      const previewUrl = video ? URL.createObjectURL(video) : null;
+      const replacedSection = retakeSectionId ? sections.find((item) => item.id === retakeSectionId) : null;
+      if (replacedSection?.previewUrl) URL.revokeObjectURL(replacedSection.previewUrl);
+      const section: RecordingSection = { id: retakeSectionId ?? `section-${Date.now()}`, duration, ...sectionStartedAt.current, videoPath, previewUrl };
       const next = retakeSectionId
         ? sections.map((item) => item.id === retakeSectionId ? section : item)
         : [...sections, section];
+      sectionsRef.current = next;
       setSections(next);
       setRetakeSectionId(null);
       if (next.length > 1) setProcessingStatus("Building timeline video…");
-      const assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
-      setLastVideoPath(assembled);
-      return assembled;
+      let assembled: string | null = null;
+      try {
+        assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
+        setLastVideoPath(assembled);
+        return assembled;
+      } finally {
+        await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembled });
+      }
     } finally { recorder.current = null; videoRecorder.current = null; setProcessingStatus(null); }
   };
 
   const removeSection = async (id: string) => {
+    const removed = sections.find((section) => section.id === id);
+    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
     const next = sections.filter((section) => section.id !== id);
+    sectionsRef.current = next;
     setSections(next);
     if (retakeSectionId === id) setRetakeSectionId(null);
     if (next.length > 1) setProcessingStatus("Rebuilding timeline video…");
     try {
       const current = useAppStore.getState();
-      const assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
-      setLastVideoPath(assembled);
+      let assembled: string | null = null;
+      try {
+        assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
+        setLastVideoPath(assembled);
+      } finally {
+        await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembled });
+      }
+    } finally { setProcessingStatus(null); }
+  };
+
+  const replaySection = async (id: string) => {
+    const section = sectionsRef.current.find((item) => item.id === id);
+    if (!section) throw new Error("The recording section no longer exists");
+    if (section.previewUrl) return section.previewUrl;
+    if (!section.videoPath) throw new Error("This recording section has no video");
+    const video = await loadRecordingPreview(useAppStore.getState().settingsFolder, section.videoPath);
+    if (!video) throw new Error("Saved recording previews are available in the desktop app");
+    const previewUrl = URL.createObjectURL(video);
+    const next = sectionsRef.current.map((item) => item.id === id ? { ...item, previewUrl } : item);
+    if (!next.some((item) => item.id === id)) {
+      URL.revokeObjectURL(previewUrl);
+      throw new Error("The recording section no longer exists");
+    }
+    sectionsRef.current = next;
+    setSections(next);
+    return previewUrl;
+  };
+
+  const clearAllSections = async () => {
+    const current = useAppStore.getState();
+    setProcessingStatus("Deleting recordings…");
+    try {
+      await clearRecordingTimeline(current.settingsFolder, current.presentationFile);
+      sectionsRef.current.forEach((section) => { if (section.previewUrl) URL.revokeObjectURL(section.previewUrl); });
+      sectionsRef.current = [];
+      recordingFiles.current = [];
+      timelineId.current = `timeline-${Date.now()}`;
+      setSections([]);
+      setRetakeSectionId(null);
+      setLastVideoPath(null);
     } finally { setProcessingStatus(null); }
   };
 
@@ -404,5 +475,5 @@ export function useRecorder() {
     store.goTo(section.slide, section.step);
   };
 
-  return { elapsed, paused, lastVideoPath, processingStatus, sections, retakeSectionId, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop, removeSection, retakeSection };
+  return { elapsed, paused, lastVideoPath, processingStatus, sections, retakeSectionId, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop, removeSection, replaySection, clearAllSections, retakeSection };
 }
