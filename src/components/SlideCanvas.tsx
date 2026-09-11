@@ -5,7 +5,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { useAppStore } from "../store";
-import { visibleMarkdown } from "../lib/slides";
+import { backgroundTone, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
 import type { CameraLayout } from "../types";
@@ -68,7 +68,7 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   }), [slide?.id, exportMode]);
 
   return <div className="stage-shell">
-    <article className="slide-canvas" data-slide-index={slideIndex}>
+    <article className={`slide-canvas ${backgroundTone(slide?.background)}`} style={slide?.background ? { backgroundColor: slide.background } : undefined} data-slide-index={slideIndex}>
       <div className="slide-accent" />
       <div className="slide-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{markdown}</ReactMarkdown></div>
       <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>

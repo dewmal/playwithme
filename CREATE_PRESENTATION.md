@@ -6,6 +6,14 @@ Create your presentation by writing Markdown in `presentation.md`.
 
 Select **Theme** in the top toolbar to switch the entire presentation between light and dark mode. The selected theme is used in the editor, fullscreen presentation, thumbnails, and PDF exports. Presenta remembers your choice for the next session; when no choice has been saved, it follows your system appearance.
 
+To color only the current slide, select **Background** and choose a color. Select **Reset** to make that slide use the presentation theme again. You can also set the color directly in Markdown with a six-digit hex value at the start of a slide:
+
+```md
+<!-- background: #17324d -->
+
+# A custom background
+```
+
 ## Create slides
 
 Start each slide with a heading. Separate slides with `---` on its own line.

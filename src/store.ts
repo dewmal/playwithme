@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { CellOutput, Drawing, Slide, TimelineEvent, Tool } from "./types";
-import { parseSlides } from "./lib/slides";
+import { parseSlides, setSlideBackground as updateSlideBackground } from "./lib/slides";
 import { SAMPLE_MARKDOWN } from "./lib/sample";
 
 type Mode = "edit" | "present";
@@ -18,7 +18,7 @@ interface AppState {
   mode: Mode; theme: Theme; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
-  setMarkdown: (value: string) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
+  setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setTheme: (theme: Theme) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
@@ -37,6 +37,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setMarkdown: (markdown) => set((state) => {
     const slides = parseSlides(markdown);
     return { markdown, slides, slideIndex: Math.min(state.slideIndex, Math.max(0, slides.length - 1)), step: 0 };
+  }),
+  setSlideBackground: (color) => set((state) => {
+    const markdown = updateSlideBackground(state.markdown, state.slideIndex, color);
+    return { markdown, slides: parseSlides(markdown) };
   }),
   loadDeck: (folder, presentationFile, presentationFiles, markdown) => set({ folder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
   addSlide: () => {
