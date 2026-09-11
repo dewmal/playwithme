@@ -232,6 +232,33 @@ print(average)
 ```
 ````
 
+## Add a chart
+
+Use an `echarts` fenced block containing a valid JSON option object. Presenta renders the chart responsively and includes it in PDF and video exports.
+
+````md
+# Revenue by quarter
+
+```echarts
+{
+  "tooltip": { "trigger": "axis" },
+  "xAxis": {
+    "type": "category",
+    "data": ["Q1", "Q2", "Q3", "Q4"]
+  },
+  "yAxis": { "type": "value" },
+  "series": [{
+    "name": "Revenue",
+    "type": "bar",
+    "data": [18, 24, 31, 38],
+    "itemStyle": { "color": "#ff4d67" }
+  }]
+}
+```
+````
+
+The option must use JSON syntax, so quote property names and strings and omit JavaScript functions. ECharts supports bar, line, pie, scatter, and other standard series types.
+
 Use **Slide theme** in the top toolbar to choose a light or dark code theme and set code blocks to full, 75%, or 50% width. These settings apply to the current slide and can be copied to all slides. They are also stored in Markdown as part of the slide style:
 
 ```md

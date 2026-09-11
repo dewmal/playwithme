@@ -22,7 +22,7 @@ npm install
 npm run tauri dev
 ```
 
-Open a project folder containing one or more Markdown presentation files. Decks can live at the project root or inside subfolders and appear in an expandable tree. When a project has multiple decks, choose one when opening the folder or switch decks from the filename in the toolbar or sidebar. Every deck can use the shared root-level `assets/` folder. Use `---` between slides, `<!-- step -->` for reveals, `<!-- columns -->` with `<!-- column -->` for column layouts, and `???` before presenter notes. Add weights such as `<!-- columns: 35 65 -->` when columns need different widths. Python cells execute in a persistent Pyodide Web Worker; the first run downloads the runtime.
+Open a project folder containing one or more Markdown presentation files. Decks can live at the project root or inside subfolders and appear in an expandable tree. When a project has multiple decks, choose one when opening the folder or switch decks from the filename in the toolbar or sidebar. Every deck can use the shared root-level `assets/` folder. Use `---` between slides, `<!-- step -->` for reveals, `<!-- columns -->` with `<!-- column -->` for column layouts, and `???` before presenter notes. Add weights such as `<!-- columns: 35 65 -->` when columns need different widths. Use an `echarts` fenced block with a JSON option object for responsive charts. Python cells execute in a persistent Pyodide Web Worker; the first run downloads the runtime.
 
 ## Controls
 

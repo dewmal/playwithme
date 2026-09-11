@@ -4,6 +4,7 @@ import { useAppStore } from "../store";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
+import { EChart } from "./EChart";
 import { SlideMarkdown } from "./SlideMarkdown";
 import type { CameraLayout } from "../types";
 
@@ -55,7 +56,7 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   const markdown = slide ? visibleMarkdown(slide, forcedStep ?? step) : "# No slides";
   const components = useMemo(() => ({
     pre(props: { children?: ReactNode }) {
-      return isValidElement(props.children) && props.children.type === CodeCell ? props.children : <pre>{props.children}</pre>;
+      return isValidElement(props.children) && (props.children.type === CodeCell || props.children.type === EChart) ? props.children : <pre>{props.children}</pre>;
     },
     code(props: { className?: string; children?: React.ReactNode }) {
       const match = /language-(\w+)/.exec(props.className ?? "");
@@ -64,6 +65,9 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
         const hash = Array.from(source).reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 7).toString(36);
         const id = `${slide?.id ?? "slide"}-python-${hash}`;
         return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} initialCode={source} theme={resolvedCodeTheme} />;
+      }
+      if (match?.[1] === "echarts") {
+        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} />;
       }
       return <code className={props.className}>{props.children}</code>;
     },
