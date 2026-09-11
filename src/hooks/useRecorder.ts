@@ -227,7 +227,7 @@ export function useRecorder() {
     };
   }, []);
 
-  const createSlideStream = async () => {
+  const createSlideStream = async (resetPresentation = false) => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
     const output = document.createElement("canvas"); output.width = VIDEO_WIDTH; output.height = VIDEO_HEIGHT;
@@ -240,6 +240,7 @@ export function useRecorder() {
       await camera.play().catch(() => undefined);
     }
     renderingFrames.current = true;
+    if (resetPresentation) store.resetForRecording();
     const renderFrame = async () => {
       if (!renderingFrames.current) return;
       try {
@@ -285,7 +286,7 @@ export function useRecorder() {
     return output.captureStream(30);
   };
 
-  const start = async () => {
+  const start = async (resetPresentation = false) => {
     if (!useAppStore.getState().folder) throw new Error("Create or open a presentation before recording");
     setProcessingStatus("Preparing recording…");
     let slideStream: MediaStream | null = null;
@@ -297,7 +298,7 @@ export function useRecorder() {
         cameraEnabledRef.current = false;
         setCameraEnabled(false);
       }
-      slideStream = await createSlideStream();
+      slideStream = await createSlideStream(resetPresentation);
     } catch (error) {
       renderingFrames.current = false; clearTimeout(frameTimer.current); slideStream?.getTracks().forEach((track) => track.stop()); stopPreview(); setProcessingStatus(null);
       const detail = error instanceof Error && error.message ? `: ${error.message}` : "";

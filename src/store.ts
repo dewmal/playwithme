@@ -22,7 +22,7 @@ interface AppState {
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setTheme: (theme: Theme) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
-  addDrawing: (drawing: Drawing) => void; undo: () => void; redo: () => void; clearSlide: () => void;
+  addDrawing: (drawing: Drawing) => void; undo: () => void; redo: () => void; clearSlide: () => void; resetForRecording: () => void;
   setOutput: (output: CellOutput) => void; startRecording: () => void; pauseRecording: () => void; resumeRecording: () => void; stopRecording: () => void; addEvent: (event: Omit<TimelineEvent, "time">) => void;
 }
 
@@ -76,6 +76,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   undo: () => set((s) => { const mine = [...s.drawings]; const last = mine.pop(); return last ? { drawings: mine, redoStack: [...s.redoStack, last] } : s; }),
   redo: () => set((s) => { const redoStack = [...s.redoStack]; const last = redoStack.pop(); return last ? { drawings: [...s.drawings, last], redoStack } : s; }),
   clearSlide: () => { const id = get().slides[get().slideIndex]?.id; set((s) => ({ drawings: s.drawings.filter((d) => d.slideId !== id) })); get().addEvent({ type: "drawing-clear", slide: get().slideIndex }); },
+  resetForRecording: () => set({ drawings: [], redoStack: [], outputs: {} }),
   setOutput: (output) => { set((s) => ({ outputs: { ...s.outputs, [output.cellId]: output } })); get().addEvent({ type: "cell-output", cell: output.cellId, data: output }); },
   startRecording: () => { const now = performance.now(); set({ recording: true, recordingPaused: false, recordStarted: now, recordPausedAt: null, events: [{ time: 0, type: "slide", slide: get().slideIndex }] }); },
   pauseRecording: () => { const s = get(); if (s.recording && !s.recordingPaused) set({ recordingPaused: true, recordPausedAt: performance.now() }); },

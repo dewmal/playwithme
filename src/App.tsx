@@ -41,7 +41,7 @@ export default function App() {
   const openMicrophoneSetup = async () => { setMicrophoneOpen(true); await requestMicrophone(); };
   const showMicrophoneSettings = async () => { try { if (!await openMicrophoneSettings()) notify("Allow microphone access for this site in your browser settings", 6000); } catch { notify("Open System Settings and allow microphone access for Presenta", 6000); } };
   const closeMicrophoneSetup = () => { recorder.cancelMicrophoneSetup(); setMicrophoneOpen(false); };
-  const startRecording = async () => { try { await recorder.start(); setMicrophoneOpen(false); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
+  const startRecording = async (resetPresentation = false) => { try { await recorder.start(resetPresentation); setMicrophoneOpen(false); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } finally { setPresenterView(false); } };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };
 

@@ -1,5 +1,5 @@
 import { AudioLines, Camera, ExternalLink, Maximize2, Mic, Move, Play, RotateCcw, ShieldAlert, VideoOff, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CameraLayout } from "../types";
 
 type Props = {
@@ -24,13 +24,14 @@ type Props = {
   selectCamera: (deviceId: string) => void;
   toggleCamera: () => void;
   setCameraLayout: (layout: CameraLayout) => void;
-  start: () => void;
+  start: (resetPresentation: boolean) => void;
   retry: () => void;
   openSettings: () => void;
 };
 
 export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDeviceLabel, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, permission, error, busy, close, select, selectCamera, toggleCamera, setCameraLayout, start, retry, openSettings }: Props) {
   const video = useRef<HTMLVideoElement>(null);
+  const [resetPresentation, setResetPresentation] = useState(false);
   useEffect(() => {
     if (!video.current) return;
     video.current.srcObject = cameraStream;
@@ -97,7 +98,8 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
         <div className="input-status"><AudioLines /><span><b>{hearingInput ? "Input detected" : "Waiting for sound"}</b><small>{selectedDeviceLabel}</small></span><i><em style={{ width: `${Math.max(3, inputLevel * 100)}%` }} /></i></div>
       </div>
 
-      <footer><span>{cameraEnabled ? `Camera: ${selectedCameraLabel}` : "Camera is off"}. Choose your microphone, then speak to test it.</span><span className="microphone-actions">{permission !== "granted" && <button className="retry-microphone" onClick={retry} disabled={busy}><RotateCcw /> Try again</button>}<button onClick={start} disabled={busy || permission !== "granted" || !microphones.length}><Play /> Start recording</button></span></footer>
+      <label className="recording-reset-option"><input type="checkbox" checked={resetPresentation} onChange={(event) => setResetPresentation(event.target.checked)} disabled={busy} /><span><b>Start with a clean presentation</b><small>Clear all drawings and code outputs before recording.</small></span></label>
+      <footer><span>{cameraEnabled ? `Camera: ${selectedCameraLabel}` : "Camera is off"}. Choose your microphone, then speak to test it.</span><span className="microphone-actions">{permission !== "granted" && <button className="retry-microphone" onClick={retry} disabled={busy}><RotateCcw /> Try again</button>}<button onClick={() => start(resetPresentation)} disabled={busy || permission !== "granted" || !microphones.length}><Play /> Start recording</button></span></footer>
     </section>
   </div>;
 }
