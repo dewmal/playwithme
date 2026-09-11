@@ -30,8 +30,12 @@ Presentations/
 ├── python-basics/
 │   ├── presentation.md
 │   ├── assets/
-│   ├── drawings/
-│   └── metadata.json
+│   └── .presenta/
+│       ├── settings.json
+│       ├── drawings.json
+│       ├── outputs/
+│       ├── sessions/
+│       └── exports/
 │
 └── machine-learning/
     ├── presentation.md
@@ -451,27 +455,25 @@ Example presentation folder:
 my-presentation/
 │
 ├── presentation.md
-├── presentation.json
 │
 ├── assets/
 │   ├── image-01.png
 │   └── diagram.svg
 │
-├── sessions/
-│   └── 2026-09-10-session/
-│       ├── session.json
-│       ├── narration.webm
-│       │
-│       ├── outputs/
-│       │   ├── python-001.json
-│       │   ├── python-002.png
-│       │   └── python-003.html
-│       │
-│       └── drawings.json
-│
-└── exports/
-    ├── presentation.pdf
-    └── presentation.mp4
+└── .presenta/
+    ├── settings.json
+    ├── drawings.json
+    ├── outputs/
+    ├── sessions/
+    │   └── 2026-09-10-session/
+    │       ├── session.json
+    │       ├── narration.webm
+    │       ├── capture.webm
+    │       ├── outputs/
+    │       │   └── python-001.json
+    │       └── drawings.json
+    └── exports/
+        └── 2026-09-10-session.mp4
 ```
 
 ---

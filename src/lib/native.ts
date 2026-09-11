@@ -8,7 +8,8 @@ export async function openPresentation() {
   if (!folder) return null;
   const markdown = await invoke<string>("load_presentation", { folder });
   const drawings = await invoke<Drawing[]>("load_drawings", { folder }).catch(() => []);
-  return { folder, markdown, drawings };
+  const outputs = await invoke<Record<string, CellOutput>>("load_outputs", { folder }).catch(() => ({}));
+  return { folder, markdown, drawings, outputs };
 }
 
 export async function createPresentation(markdown: string) {
@@ -16,7 +17,7 @@ export async function createPresentation(markdown: string) {
   const folder = await open({ directory: true, multiple: false, title: "Choose or create a folder for the new presentation" });
   if (!folder) return null;
   await invoke("create_presentation", { folder, markdown });
-  return { folder, markdown, drawings: [] as Drawing[] };
+  return { folder, markdown, drawings: [] as Drawing[], outputs: {} as Record<string, CellOutput> };
 }
 
 export async function savePresentation(folder: string | null, markdown: string, drawings: Drawing[], outputs: Record<string, CellOutput>) {

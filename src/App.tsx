@@ -20,10 +20,10 @@ export default function App() {
     try {
       const result = await createPresentation(NEW_PRESENTATION_MARKDOWN);
       if (!result) return;
-      store.loadDeck(result.folder, result.markdown); useAppStore.setState({ drawings: result.drawings }); notify("New presentation created");
+      store.loadDeck(result.folder, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); notify("New presentation created");
     } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
   };
-  const openDeck = async () => { const result = await openPresentation(); if (!result) { notify("Folder opening is available in the desktop app"); return; } store.loadDeck(result.folder, result.markdown); useAppStore.setState({ drawings: result.drawings }); notify("Presentation loaded"); };
+  const openDeck = async () => { const result = await openPresentation(); if (!result) { notify("Folder opening is available in the desktop app"); return; } store.loadDeck(result.folder, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); notify("Presentation loaded"); };
   const saveDeck = async () => { await savePresentation(store.folder, store.markdown, store.drawings, store.outputs); notify(store.folder ? "Saved to presentation folder" : "Draft saved locally"); };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };

@@ -33,7 +33,23 @@ Open a folder containing `presentation.md`. Use `---` between slides, `<!-- step
 | F | Presentation mode |
 | Esc | Return to select mode |
 
-Sessions are stored under `sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `exports/`.
+Presentation folders stay deliberately small:
+
+```text
+my-presentation/
+├── presentation.md
+├── assets/
+└── .presenta/
+    ├── settings.json
+    ├── drawings.json
+    ├── outputs/
+    ├── sessions/
+    └── exports/
+```
+
+Only the editable presentation and its required assets live at the top level. Presenta-owned settings, drawings, cached Python outputs, recordings, and internal video exports stay under `.presenta/`. Existing projects with the older top-level `drawings/` and `outputs/` layout remain readable and are saved in the new layout the next time they change.
+
+Sessions are stored under `.presenta/sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `.presenta/exports/`.
 
 ### macOS debug permissions
 

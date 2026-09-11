@@ -1,9 +1,36 @@
-use serde_json::Value;
+use serde_json::{json, Map, Value};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
+
+const APP_DIRECTORY: &str = ".presenta";
+
+fn app_folder(root: &Path) -> PathBuf {
+    root.join(APP_DIRECTORY)
+}
+
+fn ensure_app_layout(root: &Path) -> Result<PathBuf, String> {
+    let app = app_folder(root);
+    for directory in ["outputs", "sessions", "exports"] {
+        fs::create_dir_all(app.join(directory)).map_err(|e| e.to_string())?;
+    }
+    let settings = app.join("settings.json");
+    if !settings.exists() {
+        fs::write(
+            settings,
+            serde_json::to_string_pretty(&json!({
+                "formatVersion": 1,
+                "presentation": "presentation.md",
+                "assets": "assets"
+            }))
+            .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(app)
+}
 
 fn ensure_folder(folder: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(folder);
@@ -23,12 +50,48 @@ fn load_presentation(folder: String) -> Result<String, String> {
 #[tauri::command]
 fn load_drawings(folder: String) -> Result<Value, String> {
     let root = ensure_folder(&folder)?;
-    let path = root.join("drawings").join("drawings.json");
+    let current = app_folder(&root).join("drawings.json");
+    let legacy = root.join("drawings").join("drawings.json");
+    let path = if current.exists() { current } else { legacy };
     if !path.exists() {
         return Ok(Value::Array(vec![]));
     }
     let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_outputs(folder: String) -> Result<Value, String> {
+    let root = ensure_folder(&folder)?;
+    let current = app_folder(&root).join("outputs");
+    let legacy = root.join("outputs");
+    let directory = if current.is_dir() { current } else { legacy };
+    if !directory.is_dir() {
+        return Ok(Value::Object(Map::new()));
+    }
+
+    let mut outputs = Map::new();
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let output: Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let id = output
+            .get("cellId")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| {
+                path.file_stem()
+                    .and_then(|value| value.to_str())
+                    .map(str::to_owned)
+            });
+        if let Some(id) = id {
+            outputs.insert(id, output);
+        }
+    }
+    Ok(Value::Object(outputs))
 }
 
 #[tauri::command]
@@ -40,9 +103,8 @@ fn create_presentation(folder: String, markdown: String) -> Result<(), String> {
     }
     fs::write(presentation, markdown)
         .map_err(|e| format!("Could not create presentation.md: {e}"))?;
-    for directory in ["assets", "sessions", "exports", "drawings", "outputs"] {
-        fs::create_dir_all(root.join(directory)).map_err(|e| e.to_string())?;
-    }
+    fs::create_dir_all(root.join("assets")).map_err(|e| e.to_string())?;
+    ensure_app_layout(&root)?;
     Ok(())
 }
 
@@ -55,11 +117,10 @@ fn save_presentation(
 ) -> Result<(), String> {
     let root = ensure_folder(&folder)?;
     fs::write(root.join("presentation.md"), markdown).map_err(|e| e.to_string())?;
-    let drawings_dir = root.join("drawings");
-    fs::create_dir_all(&drawings_dir).map_err(|e| e.to_string())?;
+    let app = ensure_app_layout(&root)?;
     let json = serde_json::to_string_pretty(&drawings).map_err(|e| e.to_string())?;
-    fs::write(drawings_dir.join("drawings.json"), json).map_err(|e| e.to_string())?;
-    let outputs_dir = root.join("outputs");
+    fs::write(app.join("drawings.json"), json).map_err(|e| e.to_string())?;
+    let outputs_dir = app.join("outputs");
     fs::create_dir_all(&outputs_dir).map_err(|e| e.to_string())?;
     if let Some(items) = outputs.as_object() {
         for (cell_id, output) in items {
@@ -92,7 +153,8 @@ fn save_session(
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return Err("Invalid session id".into());
     }
-    let session_dir = root.join("sessions").join(id);
+    let app = ensure_app_layout(&root)?;
+    let session_dir = app.join("sessions").join(id);
     let outputs_dir = session_dir.join("outputs");
     fs::create_dir_all(&outputs_dir).map_err(|e| e.to_string())?;
     fs::write(
@@ -126,7 +188,7 @@ fn save_session(
     let video_path = if let Some(bytes) = video_bytes {
         let capture = session_dir.join("capture.webm");
         fs::write(&capture, bytes).map_err(|e| e.to_string())?;
-        let exports_dir = root.join("exports");
+        let exports_dir = app.join("exports");
         fs::create_dir_all(&exports_dir).map_err(|e| e.to_string())?;
         let output = exports_dir.join(format!("{id}.mp4"));
         run_ffmpeg(&capture, &output)?;
@@ -203,6 +265,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_presentation,
             load_drawings,
+            load_outputs,
             create_presentation,
             save_presentation,
             save_session,
