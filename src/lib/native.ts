@@ -44,6 +44,10 @@ export async function openPresentation(folder: string, settingsFolder: string, p
   return { folder, settingsFolder, presentationFile, presentations: presentations ?? await invoke<string[]>("list_presentations", { folder }), markdown, drawings, outputs };
 }
 
+export async function loadProjectImage(folder: string, source: string) {
+  return invoke<number[]>("load_project_image", { folder, source });
+}
+
 export async function createPresentation(markdown: string, location: SettingsLocation, projectFolder?: string | null, currentSettingsFolder?: string | null) {
   if (!isTauri()) throw new Error("New presentations are available in the desktop app");
   const defaultPath = projectFolder ? `${projectFolder.replace(/[\\/]+$/, "")}/presentation.md` : "presentation.md";

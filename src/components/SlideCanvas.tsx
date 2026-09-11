@@ -1,6 +1,8 @@
-import { isValidElement, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { isValidElement, useEffect, useMemo, useRef, useState, type ImgHTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Paintbrush } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
+import { loadProjectImage } from "../lib/native";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
@@ -13,6 +15,37 @@ function textFromNode(node: ReactNode): string {
   if (Array.isArray(node)) return node.map(textFromNode).join("");
   if (isValidElement<{ children?: ReactNode }>(node)) return textFromNode(node.props.children);
   return "";
+}
+
+const imageMimeTypes: Record<string, string> = {
+  avif: "image/avif", gif: "image/gif", jpeg: "image/jpeg", jpg: "image/jpeg",
+  png: "image/png", svg: "image/svg+xml", webp: "image/webp",
+};
+
+function ProjectImage({ src, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
+  const folder = useAppStore((state) => state.folder);
+  const [resolvedSource, setResolvedSource] = useState(src);
+  useEffect(() => {
+    if (!src || !folder || !isTauri() || /^(?:[a-z][a-z\d+.-]*:|\/)/i.test(src)) {
+      setResolvedSource(src);
+      return;
+    }
+    let objectUrl: string | undefined;
+    let active = true;
+    const source = decodeURIComponent(src.split(/[?#]/, 1)[0]).replace(/^\.\//, "");
+    setResolvedSource(undefined);
+    loadProjectImage(folder, source).then((bytes) => {
+      if (!active) return;
+      const extension = source.split(".").at(-1)?.toLowerCase() ?? "";
+      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: imageMimeTypes[extension] }));
+      setResolvedSource(objectUrl);
+    }).catch(() => { if (active) setResolvedSource(src); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [folder, src]);
+  return <img {...props} src={resolvedSource} />;
 }
 
 function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: CameraLayout; move: (layout: CameraLayout) => void }) {
@@ -56,6 +89,7 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const markdown = slide ? visibleMarkdown(slide, forcedStep ?? step) : "# No slides";
   const components = useMemo(() => ({
+    img: ProjectImage,
     pre(props: { children?: ReactNode }) {
       return isValidElement(props.children) && (props.children.type === CodeCell || props.children.type === EChart) ? props.children : <pre>{props.children}</pre>;
     },

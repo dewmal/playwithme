@@ -199,6 +199,39 @@ fn load_presentation(folder: String, presentation_file: String) -> Result<String
 }
 
 #[tauri::command]
+fn load_project_image(folder: String, source: String) -> Result<Vec<u8>, String> {
+    let root = ensure_folder(&folder)?
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve the presentation folder: {e}"))?;
+    let relative = Path::new(&source);
+    let is_safe_relative_path = !relative.as_os_str().is_empty()
+        && !relative.is_absolute()
+        && relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)));
+    let is_image = relative
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "avif" | "gif" | "jpeg" | "jpg" | "png" | "svg" | "webp"
+            )
+        });
+    if !is_safe_relative_path || !is_image {
+        return Err("Images must be safe relative paths inside the presentation project".into());
+    }
+    let image = root
+        .join(relative)
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve image {source}: {e}"))?;
+    if !image.starts_with(&root) || !image.is_file() {
+        return Err("The image must be a file inside the presentation project".into());
+    }
+    fs::read(image).map_err(|e| format!("Could not read image {source}: {e}"))
+}
+
+#[tauri::command]
 fn load_drawings(
     folder: String,
     settings_folder: String,
@@ -516,6 +549,7 @@ pub fn run() {
             settings_cache_folder,
             resolve_settings_folder,
             load_presentation,
+            load_project_image,
             load_drawings,
             load_outputs,
             create_presentation,
