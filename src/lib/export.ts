@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
-import { choosePdfPath } from "./native";
+import { choosePdfPath, exportFilename } from "./native";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 
 const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -24,9 +24,10 @@ export async function exportPdf(stepByStep: boolean) {
         pdf.addImage(canvas.toDataURL("image/jpeg", .94), "JPEG", 0, 0, 1600, 900);
       }
     }
-    const path = await choosePdfPath();
+    const filename = exportFilename(original.presentationFile, "pdf");
+    const path = await choosePdfPath(original.presentationFile);
     if (path && isTauri()) await invoke("write_binary", { path, bytes: Array.from(new Uint8Array(pdf.output("arraybuffer"))) });
-    else pdf.save("presentation.pdf");
+    else pdf.save(filename);
   } finally {
     document.body.classList.remove("exporting");
     useAppStore.setState({ slideIndex: original.slideIndex, step: original.step });

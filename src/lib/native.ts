@@ -85,16 +85,21 @@ export async function openMicrophoneSettings() {
   return true;
 }
 
-export async function exportVideo(source: string) {
+export function exportFilename(presentationFile: string | null, extension: "pdf" | "mp4") {
+  const filename = presentationFile?.split(/[\\/]/).at(-1)?.replace(/\.md$/i, "") || "presentation";
+  return `${filename}.${extension}`;
+}
+
+export async function exportVideo(source: string, presentationFile: string | null) {
   if (!isTauri()) return false;
-  const filename = source.split(/[\\/]/).at(-1) ?? "presentation.mp4";
+  const filename = exportFilename(presentationFile, "mp4");
   const output = await save({ title: "Export session video", defaultPath: filename, filters: [{ name: "MP4 video", extensions: ["mp4"] }] });
   if (!output) return false;
   await invoke("copy_video", { source, target: output });
   return true;
 }
 
-export async function choosePdfPath() {
+export async function choosePdfPath(presentationFile: string | null) {
   if (!isTauri()) return null;
-  return save({ title: "Export presentation", defaultPath: "presentation.pdf", filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  return save({ title: "Export presentation", defaultPath: exportFilename(presentationFile, "pdf"), filters: [{ name: "PDF", extensions: ["pdf"] }] });
 }
