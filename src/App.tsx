@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, Play, Save, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, PanelRight, Pause, Play, Save, Sparkles } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { DrawingToolbar } from "./components/DrawingToolbar";
@@ -11,11 +11,12 @@ import { choosePresentationProject, createPresentation, openPresentation, savePr
 import { PresentationPicker } from "./components/PresentationPicker";
 import { useRecorder } from "./hooks/useRecorder";
 import { NEW_PRESENTATION_MARKDOWN } from "./lib/sample";
+import { PresenterPanel } from "./components/PresenterPanel";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 export default function App() {
-  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; presentations: string[] } | null>(null);
+  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [presenterView, setPresenterView] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; presentations: string[] } | null>(null);
   const recorder = useRecorder();
   const notify = (message: string, duration = 2600) => { setToast(message); window.setTimeout(() => setToast(""), duration); };
   const newDeck = async () => {
@@ -35,7 +36,8 @@ export default function App() {
   };
   const openDeck = async () => { try { const project = await choosePresentationProject(); if (!project) { notify("Folder opening is available in the desktop app"); return; } if (!project.presentations.length) { notify("No Markdown presentations found in this folder"); return; } if (project.presentations.length === 1) await loadDeck(project.folder, project.presentations[0], project.presentations); else setPicker(project); } catch (error) { notify(error instanceof Error ? error.message : String(error), 6000); } };
   const saveDeck = async () => { await savePresentation(store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs); notify(store.folder ? "Presentation saved" : "Draft saved locally"); };
-  const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } };
+  const startRecording = async () => { try { await recorder.start(); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
+  const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } finally { setPresenterView(false); } };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };
 
   useEffect(() => {
@@ -59,8 +61,8 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs]);
 
-  return <div className={`app mode-${store.mode}`}>
-    {store.sidebarOpen && store.mode === "edit" && <Sidebar choosePresentation={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })} />}
+  return <div className={`app mode-${store.mode}${presenterView ? " presenter-view" : ""}`}>
+    {store.sidebarOpen && store.mode === "edit" && !presenterView && <Sidebar choosePresentation={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })} />}
     <main className="workspace">
       <header className="topbar">
         <div className="top-left">{!store.sidebarOpen && <button onClick={() => store.setSidebar(true)} title="Show slides"><Menu /></button>}<button className="deck-name" onClick={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })}>{store.presentationFile?.split(/[\\/]/).at(-1)?.replace(/\.md$/i, "") ?? "Untitled presentation"}{store.presentationFiles.length > 1 && <ChevronDown />}</button><span className="save-state"><i /> Saved</span></div>
@@ -70,13 +72,13 @@ export default function App() {
           <button className="present-button" onClick={togglePresent}><Play /> Present <ChevronDown /></button>
         </div>
       </header>
-      <section className="workspace-body"><SlideCanvas />{source && store.mode === "edit" && <SourcePanel close={() => setSource(false)} />}</section>
+      <section className="workspace-body"><SlideCanvas />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} close={() => setPresenterView(false)} />}</section>
       <DrawingToolbar />
       <footer className="controlbar">
         <div className="shortcut-hint"><Sparkles /> <span><kbd>Space</kbd> next step</span><span><kbd>D</kbd> draw</span><span><kbd>R</kbd> run</span></div>
         <div className="nav-controls"><button onClick={store.previous} disabled={store.slideIndex === 0 && store.step === 0}><ChevronLeft /></button><strong>{store.slideIndex + 1}</strong><span>/ {store.slides.length}</span><button onClick={store.next} disabled={store.slideIndex === store.slides.length - 1 && store.step === store.slides.at(-1)!.steps.length - 1}><ChevronRight /></button></div>
         <div className="session-controls">
-          {recorder.processingStatus ? <button className="processing" disabled><LoaderCircle className="spin" /><b>{recorder.processingStatus}</b></button> : store.recording ? <button className="recording" onClick={stopRecording}><CircleStop /><b>REC</b> {clock(recorder.elapsed)}</button> : <button onClick={() => recorder.start().catch((error) => notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000))}><Mic /> Record</button>}
+          {recorder.processingStatus ? <button className="processing" disabled><LoaderCircle className="spin" /><b>{recorder.processingStatus}</b></button> : store.recording ? <><button className={presenterView ? "presenter-toggle active" : "presenter-toggle"} onClick={() => setPresenterView(!presenterView)} title="Toggle presenter view"><PanelRight /> Presenter</button><button className={recorder.paused ? "resume-recording" : "pause-recording"} onClick={recorder.paused ? recorder.resume : recorder.pause} title={recorder.paused ? "Resume recording" : "Pause recording"}>{recorder.paused ? <Play /> : <Pause />}{recorder.paused ? "Resume" : "Pause"}</button><button className={`recording${recorder.paused ? " paused" : ""}`} onClick={stopRecording}><CircleStop /><b>{recorder.paused ? "PAUSED" : "REC"}</b> {clock(recorder.elapsed)}</button></> : <button onClick={startRecording}><Mic /> Record</button>}
           <button onClick={togglePresent} title="Fullscreen"><Fullscreen /></button>
         </div>
       </footer>

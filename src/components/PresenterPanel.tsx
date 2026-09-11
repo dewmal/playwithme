@@ -1,0 +1,41 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Clock3, X } from "lucide-react";
+import { useAppStore } from "../store";
+import { visibleMarkdown } from "../lib/slides";
+
+const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+export function PresenterPanel({ elapsed, paused, close }: { elapsed: number; paused: boolean; close: () => void }) {
+  const { slides, slideIndex } = useAppStore();
+  const current = slides[slideIndex];
+  const next = slides[slideIndex + 1];
+
+  return <aside className="presenter-panel" aria-label="Presenter view">
+    <header>
+      <div><span className="eyebrow">Presenter view</span><strong>Slide {slideIndex + 1} of {slides.length}</strong></div>
+      <button onClick={close} title="Close presenter view" aria-label="Close presenter view"><X /></button>
+    </header>
+
+    <section className={`presenter-timer${paused ? " paused" : ""}`} aria-label={`${paused ? "Paused" : "Recording"} at ${clock(elapsed)}`}>
+      <span className="record-dot" />
+      <div><small>{paused ? "Paused" : "Recording"}</small><b>{clock(elapsed)}</b></div>
+      <Clock3 />
+    </section>
+
+    <section className="presenter-notes">
+      <h2>Speaker notes</h2>
+      {current?.notes
+        ? <div className="presenter-notes-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{current.notes}</ReactMarkdown></div>
+        : <p className="presenter-empty">No notes for this slide. Add them after <code>???</code> in the source.</p>}
+    </section>
+
+    <section className="presenter-next">
+      <h2>Up next</h2>
+      {next ? <div className="next-slide-preview">
+        <div className="next-slide-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleMarkdown(next, next.steps.length - 1)}</ReactMarkdown></div>
+        <span>{String(slideIndex + 2).padStart(2, "0")}</span>
+      </div> : <p className="presenter-empty">This is the final slide.</p>}
+    </section>
+  </aside>;
+}

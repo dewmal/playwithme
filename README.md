@@ -58,7 +58,7 @@ my-presentation-project/
 
 Editable presentations and their required assets live in the project tree. Presenta-owned settings, drawings, cached Python outputs, recordings, and internal video exports stay under `.presenta/`. The default root-level `presentation.md` keeps its state directly under `.presenta/`; additional decks keep separate state under `.presenta/presentations/<relative-path>/`. Existing projects with the older top-level `drawings/` and `outputs/` layout remain readable and are saved in the new layout the next time they change.
 
-Sessions are stored under `.presenta/sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `.presenta/exports/`.
+Sessions are stored under `.presenta/sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. Recording opens a presenter view with the current speaker notes, recording timer, and next-slide preview; this private panel is never included in the captured video and can be toggled from the recording controls. A session can be paused and resumed without adding the paused interval to its audio, video, event timeline, or duration. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `.presenta/exports/`.
 
 ### macOS debug permissions
 

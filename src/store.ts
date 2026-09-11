@@ -8,13 +8,13 @@ interface AppState {
   folder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
   mode: Mode; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
-  recording: boolean; recordStarted: number | null; events: TimelineEvent[];
+  recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
   setMarkdown: (value: string) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
   addDrawing: (drawing: Drawing) => void; undo: () => void; redo: () => void; clearSlide: () => void;
-  setOutput: (output: CellOutput) => void; startRecording: () => void; stopRecording: () => void; addEvent: (event: Omit<TimelineEvent, "time">) => void;
+  setOutput: (output: CellOutput) => void; startRecording: () => void; pauseRecording: () => void; resumeRecording: () => void; stopRecording: () => void; addEvent: (event: Omit<TimelineEvent, "time">) => void;
 }
 
 function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): TimelineEvent {
@@ -24,7 +24,7 @@ function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): T
 export const useAppStore = create<AppState>((set, get) => ({
   folder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
   mode: "edit", sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
-  drawings: [], redoStack: [], outputs: {}, recording: false, recordStarted: null, events: [],
+  drawings: [], redoStack: [], outputs: {}, recording: false, recordingPaused: false, recordStarted: null, recordPausedAt: null, events: [],
   setMarkdown: (markdown) => set((state) => {
     const slides = parseSlides(markdown);
     return { markdown, slides, slideIndex: Math.min(state.slideIndex, Math.max(0, slides.length - 1)), step: 0 };
@@ -62,7 +62,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   redo: () => set((s) => { const redoStack = [...s.redoStack]; const last = redoStack.pop(); return last ? { drawings: [...s.drawings, last], redoStack } : s; }),
   clearSlide: () => { const id = get().slides[get().slideIndex]?.id; set((s) => ({ drawings: s.drawings.filter((d) => d.slideId !== id) })); get().addEvent({ type: "drawing-clear", slide: get().slideIndex }); },
   setOutput: (output) => { set((s) => ({ outputs: { ...s.outputs, [output.cellId]: output } })); get().addEvent({ type: "cell-output", cell: output.cellId, data: output }); },
-  startRecording: () => { const now = performance.now(); set({ recording: true, recordStarted: now, events: [{ time: 0, type: "slide", slide: get().slideIndex }] }); },
-  stopRecording: () => set({ recording: false }),
-  addEvent: (event) => { const s = get(); if (s.recording) set({ events: [...s.events, timedEvent(s.recordStarted, event)] }); },
+  startRecording: () => { const now = performance.now(); set({ recording: true, recordingPaused: false, recordStarted: now, recordPausedAt: null, events: [{ time: 0, type: "slide", slide: get().slideIndex }] }); },
+  pauseRecording: () => { const s = get(); if (s.recording && !s.recordingPaused) set({ recordingPaused: true, recordPausedAt: performance.now() }); },
+  resumeRecording: () => {
+    const s = get();
+    if (!s.recording || !s.recordingPaused) return;
+    const now = performance.now();
+    const pausedFor = s.recordPausedAt === null ? 0 : now - s.recordPausedAt;
+    const recordStarted = s.recordStarted === null ? null : s.recordStarted + pausedFor;
+    const resumedState: TimelineEvent = { time: recordStarted === null ? 0 : (now - recordStarted) / 1000, type: "slide", slide: s.slideIndex, step: s.step };
+    set({ recordingPaused: false, recordPausedAt: null, recordStarted, events: [...s.events, resumedState] });
+  },
+  stopRecording: () => set({ recording: false, recordingPaused: false, recordPausedAt: null }),
+  addEvent: (event) => { const s = get(); if (s.recording && !s.recordingPaused) set({ events: [...s.events, timedEvent(s.recordStarted, event)] }); },
 }));

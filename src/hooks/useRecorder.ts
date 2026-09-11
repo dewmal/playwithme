@@ -10,8 +10,10 @@ const VIDEO_BIT_RATE = 24_000_000;
 
 export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null); const videoRecorder = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]); const videoChunks = useRef<Blob[]>([]); const [elapsed, setElapsed] = useState(0); const [lastVideoPath, setLastVideoPath] = useState<string | null>(null); const [processingStatus, setProcessingStatus] = useState<string | null>(null); const timer = useRef<number>(0); const frameTimer = useRef<number>(0); const renderingFrames = useRef(false);
+  const chunks = useRef<Blob[]>([]); const videoChunks = useRef<Blob[]>([]); const [elapsed, setElapsed] = useState(0); const [paused, setPaused] = useState(false); const [lastVideoPath, setLastVideoPath] = useState<string | null>(null); const [processingStatus, setProcessingStatus] = useState<string | null>(null); const timer = useRef<number>(0); const frameTimer = useRef<number>(0); const renderingFrames = useRef(false); const activeStartedAt = useRef(0); const accumulatedMs = useRef(0); const sessionStartedAt = useRef(0);
   const store = useAppStore();
+  const updateElapsed = () => setElapsed(Math.floor((accumulatedMs.current + performance.now() - activeStartedAt.current) / 1000));
+  const startTimer = () => { clearInterval(timer.current); timer.current = window.setInterval(updateElapsed, 250); };
   const createSlideStream = async () => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
@@ -65,12 +67,27 @@ export function useRecorder() {
     videoChunks.current = []; videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm", videoBitsPerSecond: VIDEO_BIT_RATE, audioBitsPerSecond: 192_000 });
     videoRecorder.current.ondataavailable = (e) => { if (e.data.size) videoChunks.current.push(e.data); };
     videoRecorder.current.start(1000);
-    recorder.current.start(1000); store.startRecording(); setElapsed(0); setProcessingStatus(null);
-    const started = Date.now(); timer.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    recorder.current.start(1000); store.startRecording(); accumulatedMs.current = 0; activeStartedAt.current = performance.now(); sessionStartedAt.current = Date.now(); setElapsed(0); setPaused(false); setProcessingStatus(null); startTimer();
+  };
+  const pause = () => {
+    if (!recorder.current || recorder.current.state !== "recording") return;
+    recorder.current.pause();
+    if (videoRecorder.current?.state === "recording") videoRecorder.current.pause();
+    accumulatedMs.current += performance.now() - activeStartedAt.current;
+    clearInterval(timer.current); setElapsed(Math.floor(accumulatedMs.current / 1000)); setPaused(true); store.pauseRecording();
+  };
+  const resume = () => {
+    if (!recorder.current || recorder.current.state !== "paused") return;
+    recorder.current.resume();
+    if (videoRecorder.current?.state === "paused") videoRecorder.current.resume();
+    activeStartedAt.current = performance.now(); setPaused(false); store.resumeRecording(); startTimer();
   };
   const stop = async () => {
     if (!recorder.current) return;
     renderingFrames.current = false; clearTimeout(frameTimer.current);
+    if (!paused) accumulatedMs.current += performance.now() - activeStartedAt.current;
+    const duration = Math.floor(accumulatedMs.current / 1000);
+    clearInterval(timer.current); setElapsed(duration);
     setProcessingStatus("Finalizing recording…");
     try {
       const active = recorder.current; const audio = await new Promise<Blob>((resolve) => {
@@ -80,14 +97,14 @@ export function useRecorder() {
         const activeVideo = videoRecorder.current!;
         activeVideo.onstop = () => resolve(new Blob(videoChunks.current, { type: activeVideo.mimeType })); activeVideo.stop(); activeVideo.stream.getTracks().forEach((t) => t.stop());
       }) : undefined;
-      clearInterval(timer.current); store.stopRecording();
+      store.stopRecording(); setPaused(false);
       const current = useAppStore.getState();
-      const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(Date.now() - elapsed * 1000).toISOString(), duration: elapsed, events: current.events, outputs: current.outputs, drawings: current.drawings };
+      const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
       const videoPath = await saveSession(current.folder, current.presentationFile, session, audio, video); setLastVideoPath(videoPath); return videoPath;
     } finally {
       recorder.current = null; videoRecorder.current = null; setProcessingStatus(null);
     }
   };
-  return { elapsed, lastVideoPath, processingStatus, start, stop };
+  return { elapsed, paused, lastVideoPath, processingStatus, start, pause, resume, stop };
 }
