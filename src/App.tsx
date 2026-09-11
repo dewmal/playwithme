@@ -7,16 +7,17 @@ import { SourcePanel } from "./components/SourcePanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { HelpDialog } from "./components/HelpDialog";
 import { useAppStore } from "./store";
-import { choosePresentationProject, createPresentation, openPresentation, savePresentation } from "./lib/native";
+import { choosePresentationProject, createPresentation, openMicrophoneSettings, openPresentation, savePresentation } from "./lib/native";
 import { PresentationPicker } from "./components/PresentationPicker";
 import { useRecorder } from "./hooks/useRecorder";
 import { NEW_PRESENTATION_MARKDOWN } from "./lib/sample";
 import { PresenterPanel } from "./components/PresenterPanel";
+import { MicrophoneDialog } from "./components/MicrophoneDialog";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 export default function App() {
-  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [presenterView, setPresenterView] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; presentations: string[] } | null>(null);
+  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [presenterView, setPresenterView] = useState(false); const [microphoneOpen, setMicrophoneOpen] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; presentations: string[] } | null>(null);
   const recorder = useRecorder();
   const notify = (message: string, duration = 2600) => { setToast(message); window.setTimeout(() => setToast(""), duration); };
   const newDeck = async () => {
@@ -36,7 +37,11 @@ export default function App() {
   };
   const openDeck = async () => { try { const project = await choosePresentationProject(); if (!project) { notify("Folder opening is available in the desktop app"); return; } if (!project.presentations.length) { notify("No Markdown presentations found in this folder"); return; } if (project.presentations.length === 1) await loadDeck(project.folder, project.presentations[0], project.presentations); else setPicker(project); } catch (error) { notify(error instanceof Error ? error.message : String(error), 6000); } };
   const saveDeck = async () => { await savePresentation(store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs); notify(store.folder ? "Presentation saved" : "Draft saved locally"); };
-  const startRecording = async () => { try { await recorder.start(); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
+  const requestMicrophone = async () => { try { await recorder.prepareMicrophone(); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
+  const openMicrophoneSetup = async () => { setMicrophoneOpen(true); await requestMicrophone(); };
+  const showMicrophoneSettings = async () => { try { if (!await openMicrophoneSettings()) notify("Allow microphone access for this site in your browser settings", 6000); } catch { notify("Open System Settings and allow microphone access for Presenta", 6000); } };
+  const closeMicrophoneSetup = () => { recorder.cancelMicrophoneSetup(); setMicrophoneOpen(false); };
+  const startRecording = async () => { try { await recorder.start(); setMicrophoneOpen(false); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } finally { setPresenterView(false); } };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };
 
@@ -72,13 +77,13 @@ export default function App() {
           <button className="present-button" onClick={togglePresent}><Play /> Present <ChevronDown /></button>
         </div>
       </header>
-      <section className="workspace-body"><SlideCanvas />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} close={() => setPresenterView(false)} />}</section>
+      <section className="workspace-body"><SlideCanvas />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} microphone={recorder.selectedDeviceLabel} inputLevel={recorder.inputLevel} close={() => setPresenterView(false)} />}</section>
       <DrawingToolbar />
       <footer className="controlbar">
         <div className="shortcut-hint"><Sparkles /> <span><kbd>Space</kbd> next step</span><span><kbd>D</kbd> draw</span><span><kbd>R</kbd> run</span></div>
         <div className="nav-controls"><button onClick={store.previous} disabled={store.slideIndex === 0 && store.step === 0}><ChevronLeft /></button><strong>{store.slideIndex + 1}</strong><span>/ {store.slides.length}</span><button onClick={store.next} disabled={store.slideIndex === store.slides.length - 1 && store.step === store.slides.at(-1)!.steps.length - 1}><ChevronRight /></button></div>
         <div className="session-controls">
-          {recorder.processingStatus ? <button className="processing" disabled><LoaderCircle className="spin" /><b>{recorder.processingStatus}</b></button> : store.recording ? <><button className={presenterView ? "presenter-toggle active" : "presenter-toggle"} onClick={() => setPresenterView(!presenterView)} title="Toggle presenter view"><PanelRight /> Presenter</button><button className={recorder.paused ? "resume-recording" : "pause-recording"} onClick={recorder.paused ? recorder.resume : recorder.pause} title={recorder.paused ? "Resume recording" : "Pause recording"}>{recorder.paused ? <Play /> : <Pause />}{recorder.paused ? "Resume" : "Pause"}</button><button className={`recording${recorder.paused ? " paused" : ""}`} onClick={stopRecording}><CircleStop /><b>{recorder.paused ? "PAUSED" : "REC"}</b> {clock(recorder.elapsed)}</button></> : <button onClick={startRecording}><Mic /> Record</button>}
+          {recorder.processingStatus && !microphoneOpen ? <button className="processing" disabled><LoaderCircle className="spin" /><b>{recorder.processingStatus}</b></button> : store.recording ? <><button className={presenterView ? "presenter-toggle active" : "presenter-toggle"} onClick={() => setPresenterView(!presenterView)} title="Toggle presenter view"><PanelRight /> Presenter</button><button className={recorder.paused ? "resume-recording" : "pause-recording"} onClick={recorder.paused ? recorder.resume : recorder.pause} title={recorder.paused ? "Resume recording" : "Pause recording"}>{recorder.paused ? <Play /> : <Pause />}{recorder.paused ? "Resume" : "Pause"}</button><button className={`recording${recorder.paused ? " paused" : ""}`} onClick={stopRecording}><CircleStop /><b>{recorder.paused ? "PAUSED" : "REC"}</b> {clock(recorder.elapsed)}</button></> : <button onClick={openMicrophoneSetup}><Mic /> Record</button>}
           <button onClick={togglePresent} title="Fullscreen"><Fullscreen /></button>
         </div>
       </footer>
@@ -86,6 +91,7 @@ export default function App() {
     {exportOpen && <ExportDialog close={() => setExportOpen(false)} videoPath={recorder.lastVideoPath} processingStatus={recorder.processingStatus} />}
     {helpOpen && <HelpDialog close={() => setHelpOpen(false)} />}
     {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={store.folder === picker.folder ? store.presentationFile : null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
+    {microphoneOpen && <MicrophoneDialog microphones={recorder.microphones} selectedDeviceId={recorder.selectedDeviceId} selectedDeviceLabel={recorder.selectedDeviceLabel} waveform={recorder.waveform} inputLevel={recorder.inputLevel} permission={recorder.microphonePermission} error={recorder.microphoneError} busy={!!recorder.processingStatus} close={closeMicrophoneSetup} select={(deviceId) => recorder.selectMicrophone(deviceId).catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} retry={requestMicrophone} openSettings={showMicrophoneSettings} start={startRecording} />}
     {toast && <div className="toast">{toast}</div>}
   </div>;
 }

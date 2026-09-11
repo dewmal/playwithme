@@ -1,12 +1,12 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Clock3, X } from "lucide-react";
+import { AudioLines, Clock3, X } from "lucide-react";
 import { useAppStore } from "../store";
 import { visibleMarkdown } from "../lib/slides";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
-export function PresenterPanel({ elapsed, paused, close }: { elapsed: number; paused: boolean; close: () => void }) {
+export function PresenterPanel({ elapsed, paused, microphone, inputLevel, close }: { elapsed: number; paused: boolean; microphone: string; inputLevel: number; close: () => void }) {
   const { slides, slideIndex } = useAppStore();
   const current = slides[slideIndex];
   const next = slides[slideIndex + 1];
@@ -14,13 +14,18 @@ export function PresenterPanel({ elapsed, paused, close }: { elapsed: number; pa
   return <aside className="presenter-panel" aria-label="Presenter view">
     <header>
       <div><span className="eyebrow">Presenter view</span><strong>Slide {slideIndex + 1} of {slides.length}</strong></div>
-      <button onClick={close} title="Close presenter view" aria-label="Close presenter view"><X /></button>
+      <span className="presenter-head-actions"><AudioLines aria-label="Audio input active" /><button onClick={close} title="Close presenter view" aria-label="Close presenter view"><X /></button></span>
     </header>
 
     <section className={`presenter-timer${paused ? " paused" : ""}`} aria-label={`${paused ? "Paused" : "Recording"} at ${clock(elapsed)}`}>
       <span className="record-dot" />
       <div><small>{paused ? "Paused" : "Recording"}</small><b>{clock(elapsed)}</b></div>
       <Clock3 />
+    </section>
+
+    <section className="presenter-microphone" title={microphone}>
+      <span className="mini-meter">{Array.from({ length: 5 }, (_, index) => <i key={index} style={{ height: `${Math.max(3, Math.min(14, inputLevel * 22 * (index % 2 ? 1 : .72)))}px` }} />)}</span>
+      <div><small>Microphone</small><b>{microphone}</b></div>
     </section>
 
     <section className="presenter-notes">

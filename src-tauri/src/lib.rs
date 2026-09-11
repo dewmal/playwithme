@@ -322,6 +322,30 @@ fn transcode_video(input: String, output: String) -> Result<(), String> {
     run_ffmpeg(source, target)
 }
 
+#[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        command.arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
+        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start", "", "ms-settings:privacy-microphone"]);
+        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let mut command = Command::new("gnome-control-center");
+        command.arg("privacy");
+        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+    }
+    #[allow(unreachable_code)]
+    Err("Microphone settings are not available on this platform".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -336,7 +360,8 @@ pub fn run() {
             save_session,
             write_binary,
             copy_video,
-            transcode_video
+            transcode_video,
+            open_microphone_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running Presenta");

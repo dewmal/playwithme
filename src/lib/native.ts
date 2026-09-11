@@ -56,6 +56,12 @@ export async function saveSession(folder: string | null, presentationFile: strin
   return invoke<string | null>("save_session", { folder, presentationFile, session, audioBytes, videoBytes });
 }
 
+export async function openMicrophoneSettings() {
+  if (!isTauri()) return false;
+  await invoke("open_microphone_settings");
+  return true;
+}
+
 export async function exportVideo(source: string) {
   if (!isTauri()) return false;
   const filename = source.split(/[\\/]/).at(-1) ?? "presentation.mp4";
