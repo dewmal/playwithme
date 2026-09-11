@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AudioLines, Clock3, X } from "lucide-react";
 import { useAppStore } from "../store";
-import { backgroundTone, visibleMarkdown } from "../lib/slides";
+import { backgroundTone, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
@@ -37,7 +37,7 @@ export function PresenterPanel({ elapsed, paused, microphone, inputLevel, close 
 
     <section className="presenter-next">
       <h2>Up next</h2>
-      {next ? <div className={`next-slide-preview ${backgroundTone(next.background)}`} style={next.background ? { backgroundColor: next.background } : undefined}>
+      {next ? <div className={`next-slide-preview ${backgroundTone(next.background)}`} style={slideThemeStyle(next)}>
         <div className="next-slide-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleMarkdown(next, next.steps.length - 1)}</ReactMarkdown></div>
         <span>{String(slideIndex + 2).padStart(2, "0")}</span>
       </div> : <p className="presenter-empty">This is the final slide.</p>}

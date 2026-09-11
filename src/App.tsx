@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LayoutDashboard, LoaderCircle, Menu, Mic, Moon, Palette, PanelRight, Pause, Play, RotateCcw, Save, Sparkles, Sun, VideoOff } from "lucide-react";
+import { Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LayoutDashboard, LoaderCircle, Menu, Mic, Moon, PanelRight, Pause, Play, Save, Sparkles, Sun, VideoOff } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { DrawingToolbar } from "./components/DrawingToolbar";
@@ -15,6 +15,7 @@ import { PresenterPanel } from "./components/PresenterPanel";
 import { MicrophoneDialog } from "./components/MicrophoneDialog";
 import { ProjectDashboard, type RecentProject } from "./components/ProjectDashboard";
 import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
+import { ThemeToolbar } from "./components/ThemeToolbar";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
@@ -103,13 +104,12 @@ export default function App() {
         <div className="top-actions">
           <button onClick={newDeck}><FilePlus2 /> New</button><button onClick={openDeck}><FolderOpen /> Open</button><button onClick={saveDeck}><Save /> Save</button><button onClick={() => setSource(!source)} className={source ? "active" : ""}><Code2 /> Source</button>
           <button onClick={() => store.setTheme(store.theme === "light" ? "dark" : "light")} title={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`} aria-label={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`}>{store.theme === "light" ? <Moon /> : <Sun />} Theme</button>
-          <label className="background-picker" title="Change this slide's background color"><Palette /><span>Background</span><input type="color" aria-label="Slide background color" value={store.slides[store.slideIndex]?.background ?? (store.theme === "dark" ? "#17181d" : "#f4f0e8")} onChange={(event) => store.setSlideBackground(event.target.value)} /></label>
-          {store.slides[store.slideIndex]?.background && <button onClick={() => store.setSlideBackground(null)} title="Reset slide background to the presentation theme" aria-label="Reset slide background"><RotateCcw /> Reset</button>}
+          <ThemeToolbar notify={notify} />
           <button onClick={() => setHelpOpen(true)}><CircleHelp /> Help</button><button onClick={() => setExportOpen(true)}><Download /> Export</button>
           <button className="present-button" onClick={togglePresent}><Play /> Present <ChevronDown /></button>
         </div>
       </header>
-      <section className="workspace-body"><SlideCanvas cameraStream={recorder.cameraStream} showCamera={store.recording && recorder.cameraEnabled} cameraLayout={recorder.cameraLayout} moveCamera={recorder.setCameraLayout} />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} microphone={recorder.selectedDeviceLabel} inputLevel={recorder.inputLevel} close={() => setPresenterView(false)} />}</section>
+      <section className="workspace-body"><SlideCanvas cameraStream={recorder.cameraStream} showCamera={store.recording && recorder.cameraEnabled} cameraLayout={recorder.cameraLayout} moveCamera={recorder.setCameraLayout} notify={notify} />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} microphone={recorder.selectedDeviceLabel} inputLevel={recorder.inputLevel} close={() => setPresenterView(false)} />}</section>
       <DrawingToolbar />
       <footer className="controlbar">
         <div className="shortcut-hint"><Sparkles /> <span><kbd>Space</kbd> next step</span><span><kbd>D</kbd> draw</span><span><kbd>R</kbd> run</span></div>

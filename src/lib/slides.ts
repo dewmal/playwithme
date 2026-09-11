@@ -1,27 +1,91 @@
-import type { Slide } from "../types";
+import type { CSSProperties } from "react";
+import type { Slide, SlideStyle } from "../types";
 
 const separator = /^\s*---\s*$/m;
 const backgroundDirective = /^\s*<!--\s*background:\s*(#[0-9a-f]{6})\s*-->\s*$/im;
+const styleDirective = /^\s*<!--\s*slide-style:\s*([^]*?)\s*-->\s*$/im;
+
+const styleKeys: Record<string, keyof SlideStyle> = {
+  "title-font": "titleFont",
+  "body-font": "bodyFont",
+  "title-color": "titleColor",
+  "body-color": "bodyColor",
+  "accent-color": "accentColor",
+};
+
+function parseStyle(value?: string): SlideStyle {
+  if (!value) return {};
+  return value.split(";").reduce<SlideStyle>((style, entry) => {
+    const splitAt = entry.indexOf("=");
+    if (splitAt < 0) return style;
+    const key = styleKeys[entry.slice(0, splitAt).trim().toLowerCase()];
+    const setting = entry.slice(splitAt + 1).trim();
+    if (key && setting) style[key] = setting;
+    return style;
+  }, {});
+}
+
+function serializeStyle(style: SlideStyle) {
+  const entries = Object.entries(styleKeys).flatMap(([key, property]) => style[property] ? [`${key}=${style[property]}`] : []);
+  return entries.length ? `<!-- slide-style: ${entries.join("; ")} -->` : "";
+}
+
+function slideParts(markdown: string) {
+  return markdown.split(separator).map((part) => {
+    const [content] = part.split(/^\s*\?\?\?\s*$/m);
+    return { part, content, hasContent: content.replace(backgroundDirective, "").replace(styleDirective, "").trim().length > 0 };
+  });
+}
 
 export function parseSlides(markdown: string): Slide[] {
   return markdown.split(separator).map((raw, index) => {
     const [content, notes] = raw.split(/^\s*\?\?\?\s*$/m);
     const background = content.match(backgroundDirective)?.[1].toLowerCase();
-    const slideContent = content.replace(backgroundDirective, "").trim();
+    const style = parseStyle(content.match(styleDirective)?.[1]);
+    const slideContent = content.replace(backgroundDirective, "").replace(styleDirective, "").trim();
     const steps = slideContent.split(/<!--\s*step\s*-->/i).map((part) => part.trim());
-    return { id: `slide-${index + 1}`, raw: slideContent, steps, notes: notes?.trim(), background };
+    return { id: `slide-${index + 1}`, raw: slideContent, steps, notes: notes?.trim(), background, style };
   }).filter((slide) => slide.raw.length > 0);
 }
 
 export function setSlideBackground(markdown: string, slideIndex: number, color: string | null) {
   let currentSlide = -1;
-  return markdown.split(separator).map((part) => {
-    const [content] = part.split(/^\s*\?\?\?\s*$/m);
-    if (!content.replace(backgroundDirective, "").trim()) return part;
+  return slideParts(markdown).map(({ part, hasContent }) => {
+    if (!hasContent) return part;
     currentSlide += 1;
     if (currentSlide !== slideIndex) return part;
     const cleaned = part.replace(backgroundDirective, "").trim();
     return color ? `<!-- background: ${color.toLowerCase()} -->\n\n${cleaned}` : cleaned;
+  }).join("\n\n---\n\n");
+}
+
+export function setSlideStyle(markdown: string, slideIndex: number, patch: Partial<SlideStyle>) {
+  let currentSlide = -1;
+  return slideParts(markdown).map(({ part, hasContent }) => {
+    if (!hasContent) return part;
+    currentSlide += 1;
+    if (currentSlide !== slideIndex) return part;
+    const current = parseStyle(part.match(styleDirective)?.[1]);
+    const style = { ...current, ...patch };
+    const cleaned = part.replace(styleDirective, "").trim();
+    const directive = serializeStyle(style);
+    return directive ? `${directive}\n\n${cleaned}` : cleaned;
+  }).join("\n\n---\n\n");
+}
+
+export function applySlideStyleToAll(markdown: string, sourceIndex: number) {
+  const parsed = parseSlides(markdown);
+  const source = parsed[sourceIndex];
+  if (!source) return markdown;
+  let currentSlide = -1;
+  return slideParts(markdown).map(({ part, hasContent }) => {
+    if (!hasContent) return part;
+    currentSlide += 1;
+    let cleaned = part.replace(backgroundDirective, "").replace(styleDirective, "").trim();
+    const style = serializeStyle(source.style);
+    if (style) cleaned = `${style}\n\n${cleaned}`;
+    if (source.background) cleaned = `<!-- background: ${source.background} -->\n\n${cleaned}`;
+    return cleaned;
   }).join("\n\n---\n\n");
 }
 
@@ -32,6 +96,18 @@ export function backgroundTone(color?: string) {
   const green = Number.parseInt(value.slice(2, 4), 16);
   const blue = Number.parseInt(value.slice(4, 6), 16);
   return (red * .299 + green * .587 + blue * .114) < 145 ? "custom-dark" : "custom-light";
+}
+
+export function slideThemeStyle(slide?: Slide) {
+  if (!slide) return undefined;
+  return {
+    ...(slide.background ? { backgroundColor: slide.background } : {}),
+    ...(slide.style.titleFont ? { "--slide-title-font": `"${slide.style.titleFont}"` } : {}),
+    ...(slide.style.bodyFont ? { "--slide-body-font": `"${slide.style.bodyFont}"` } : {}),
+    ...(slide.style.titleColor ? { "--slide-title-color": slide.style.titleColor } : {}),
+    ...(slide.style.bodyColor ? { "--slide-body-color": slide.style.bodyColor } : {}),
+    ...(slide.style.accentColor ? { "--slide-accent": slide.style.accentColor } : {}),
+  } as CSSProperties;
 }
 
 export function visibleMarkdown(slide: Slide, step: number) {

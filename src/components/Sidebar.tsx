@@ -1,5 +1,5 @@
 import { ChevronDown, FileText, PanelLeftClose, Plus, Search } from "lucide-react";
-import { backgroundTone, slideTitle } from "../lib/slides";
+import { backgroundTone, slideThemeStyle, slideTitle } from "../lib/slides";
 import { useAppStore } from "../store";
 
 export function Sidebar({ choosePresentation }: { choosePresentation: () => void }) {
@@ -11,7 +11,7 @@ export function Sidebar({ choosePresentation }: { choosePresentation: () => void
     <div className="slide-list">
       {slides.map((slide, index) => <button className={`slide-thumb ${index === slideIndex ? "selected" : ""}`} onClick={() => goTo(index)} key={slide.id}>
         <span className="slide-number">{String(index + 1).padStart(2, "0")}</span>
-        <span className={`thumb-canvas ${backgroundTone(slide.background)}`} style={slide.background ? { backgroundColor: slide.background } : undefined}><i /><strong>{slideTitle(slide)}</strong><small>{slide.steps.length > 1 ? `${slide.steps.length} reveal steps` : "Static slide"}</small></span>
+        <span className={`thumb-canvas ${backgroundTone(slide.background)}`} style={slideThemeStyle(slide)}><i /><strong>{slideTitle(slide)}</strong><small>{slide.steps.length > 1 ? `${slide.steps.length} reveal steps` : "Static slide"}</small></span>
       </button>)}
     </div>
     <button className="sidebar-foot" onClick={choosePresentation} disabled={presentationFiles.length < 2} title={presentationFiles.length > 1 ? "Switch presentation" : undefined}><FileText /><span><b>{presentationFile ?? "Unsaved presentation"}</b><small>{slides.length} slides · autosaved</small></span>{presentationFiles.length > 1 && <ChevronDown className="switch-icon" />}</button>

@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { CellOutput, Drawing, Slide, TimelineEvent, Tool } from "./types";
-import { parseSlides, setSlideBackground as updateSlideBackground } from "./lib/slides";
+import type { CellOutput, Drawing, Slide, SlideStyle, TimelineEvent, Tool } from "./types";
+import { applySlideStyleToAll, parseSlides, setSlideBackground as updateSlideBackground, setSlideStyle as updateSlideStyle } from "./lib/slides";
 import { SAMPLE_MARKDOWN } from "./lib/sample";
 
 type Mode = "edit" | "present";
@@ -18,7 +18,7 @@ interface AppState {
   mode: Mode; theme: Theme; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
-  setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; loadDeck: (folder: string | null, settingsFolder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
+  setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; setSlideStyle: (style: Partial<SlideStyle>) => void; applyCurrentSlideStyleToAll: () => void; loadDeck: (folder: string | null, settingsFolder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setTheme: (theme: Theme) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
@@ -40,6 +40,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   setSlideBackground: (color) => set((state) => {
     const markdown = updateSlideBackground(state.markdown, state.slideIndex, color);
+    return { markdown, slides: parseSlides(markdown) };
+  }),
+  setSlideStyle: (style) => set((state) => {
+    const markdown = updateSlideStyle(state.markdown, state.slideIndex, style);
+    return { markdown, slides: parseSlides(markdown) };
+  }),
+  applyCurrentSlideStyleToAll: () => set((state) => {
+    const markdown = applySlideStyleToAll(state.markdown, state.slideIndex);
     return { markdown, slides: parseSlides(markdown) };
   }),
   loadDeck: (folder, settingsFolder, presentationFile, presentationFiles, markdown) => set({ folder, settingsFolder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
