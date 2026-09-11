@@ -1,13 +1,27 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AudioLines, Clock3, X } from "lucide-react";
+import { AudioLines, Clock3, RotateCcw, Scissors, Trash2, X } from "lucide-react";
 import { useAppStore } from "../store";
+import type { RecordingSection } from "../types";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { SlideMarkdown } from "./SlideMarkdown";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
-export function PresenterPanel({ elapsed, paused, recording, microphone, inputLevel, close }: { elapsed: number; paused: boolean; recording: boolean; microphone: string; inputLevel: number; close: () => void }) {
+interface PresenterPanelProps {
+  elapsed: number;
+  paused: boolean;
+  recording: boolean;
+  microphone: string;
+  inputLevel: number;
+  sections: RecordingSection[];
+  retakeSectionId: string | null;
+  close: () => void;
+  removeSection: (id: string) => void;
+  retakeSection: (id: string) => void;
+}
+
+export function PresenterPanel({ elapsed, paused, recording, microphone, inputLevel, sections, retakeSectionId, close, removeSection, retakeSection }: PresenterPanelProps) {
   const { slides, slideIndex, theme } = useAppStore();
   const current = slides[slideIndex];
   const next = slides[slideIndex + 1];
@@ -27,6 +41,17 @@ export function PresenterPanel({ elapsed, paused, recording, microphone, inputLe
     <section className="presenter-microphone" title={microphone}>
       <span className="mini-meter">{Array.from({ length: 5 }, (_, index) => <i key={index} style={{ height: `${Math.max(3, Math.min(14, inputLevel * 22 * (index % 2 ? 1 : .72)))}px` }} />)}</span>
       <div><small>Microphone</small><b>{microphone}</b></div>
+    </section>
+
+    <section className="recording-timeline" aria-label="Recording timeline">
+      <div className="timeline-heading"><h2>Recording timeline</h2><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span></div>
+      {sections.length ? <div className="timeline-sections">{sections.map((section, index) => <article className={retakeSectionId === section.id ? "selected" : ""} key={section.id}>
+        <span className="section-index">{index + 1}</span>
+        <div><b>Section {index + 1}</b><small>Slide {section.slide + 1} · {clock(section.duration)}</small></div>
+        <button onClick={() => retakeSection(section.id)} disabled={recording} title={`Re-record section ${index + 1}`} aria-label={`Re-record section ${index + 1}`}><RotateCcw /></button>
+        <button onClick={() => removeSection(section.id)} disabled={recording} title={`Remove section ${index + 1}`} aria-label={`Remove section ${index + 1}`}><Trash2 /></button>
+      </article>)}</div> : <div className="timeline-empty"><Scissors /><span><b>Record in sections</b><small>Stop after each part. You can remove or re-record it later.</small></span></div>}
+      {retakeSectionId && !recording && <p className="retake-notice"><RotateCcw /> Your next recording will replace the selected section.</p>}
     </section>
 
     <section className="presenter-notes">

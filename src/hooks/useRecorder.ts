@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
-import { saveSession } from "../lib/native";
-import type { CameraLayout, SessionData } from "../types";
+import { assembleRecordingSections, saveSession } from "../lib/native";
+import type { CameraLayout, RecordingSection, SessionData } from "../types";
 
 const VIDEO_WIDTH = 3840;
 const VIDEO_HEIGHT = 2160;
@@ -24,6 +24,8 @@ export function useRecorder() {
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const [lastVideoPath, setLastVideoPath] = useState<string | null>(null);
+  const [sections, setSections] = useState<RecordingSection[]>([]);
+  const [retakeSectionId, setRetakeSectionId] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -46,7 +48,10 @@ export function useRecorder() {
   const activeStartedAt = useRef(0);
   const accumulatedMs = useRef(0);
   const sessionStartedAt = useRef(0);
+  const sectionStartedAt = useRef({ slide: 0, step: 0 });
+  const timelineId = useRef(`timeline-${Date.now()}`);
   const store = useAppStore();
+  const deckKey = useRef(`${store.folder ?? ""}:${store.presentationFile ?? ""}`);
 
   const updateElapsed = () => setElapsed(Math.floor((accumulatedMs.current + performance.now() - activeStartedAt.current) / 1000));
   const startTimer = () => { clearInterval(timer.current); timer.current = window.setInterval(updateElapsed, 250); };
@@ -227,6 +232,16 @@ export function useRecorder() {
     };
   }, []);
 
+  useEffect(() => {
+    const nextKey = `${store.folder ?? ""}:${store.presentationFile ?? ""}`;
+    if (nextKey === deckKey.current) return;
+    deckKey.current = nextKey;
+    timelineId.current = `timeline-${Date.now()}`;
+    setSections([]);
+    setRetakeSectionId(null);
+    setLastVideoPath(null);
+  }, [store.folder, store.presentationFile]);
+
   const createSlideStream = async (resetPresentation = false) => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
@@ -300,10 +315,10 @@ export function useRecorder() {
     try {
       if (!stream || !stream.active) { await openMicrophone(); stream = previewStream.current; }
       if (!stream) throw new Error("The selected microphone is unavailable");
-      if (cameraEnabledRef.current && !cameraPreviewStream.current) {
+      if (cameraEnabledRef.current && !cameraPreviewStream.current) await openCamera().catch(() => {
         cameraEnabledRef.current = false;
         setCameraEnabled(false);
-      }
+      });
       slideStream = await createSlideStream(resetPresentation);
     } catch (error) {
       renderingFrames.current = false; clearTimeout(frameTimer.current); slideStream?.getTracks().forEach((track) => track.stop()); stopPreview(); setProcessingStatus(null);
@@ -311,7 +326,7 @@ export function useRecorder() {
       throw new Error(`Recording could not start${detail}`);
     }
     previewStream.current = stream;
-    setLastVideoPath(null); chunks.current = [];
+    chunks.current = [];
     recorder.current = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : undefined });
     recorder.current.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data); };
     const combined = new MediaStream([...slideStream.getVideoTracks(), ...stream.getAudioTracks()]);
@@ -319,6 +334,8 @@ export function useRecorder() {
     videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm", videoBitsPerSecond: VIDEO_BIT_RATE, audioBitsPerSecond: 192_000 });
     videoRecorder.current.ondataavailable = (event) => { if (event.data.size) videoChunks.current.push(event.data); };
     videoRecorder.current.start(1000);
+    const state = useAppStore.getState();
+    sectionStartedAt.current = { slide: state.slideIndex, step: state.step };
     recorder.current.start(1000); store.startRecording(); accumulatedMs.current = 0; activeStartedAt.current = performance.now(); sessionStartedAt.current = Date.now(); setElapsed(0); setPaused(false); setProcessingStatus(null); startTimer();
   };
 
@@ -354,9 +371,38 @@ export function useRecorder() {
       const current = useAppStore.getState();
       const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
-      const videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video); setLastVideoPath(videoPath); return videoPath;
+      const videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video);
+      const section: RecordingSection = { id: retakeSectionId ?? `section-${Date.now()}`, duration, ...sectionStartedAt.current, videoPath };
+      const next = retakeSectionId
+        ? sections.map((item) => item.id === retakeSectionId ? section : item)
+        : [...sections, section];
+      setSections(next);
+      setRetakeSectionId(null);
+      if (next.length > 1) setProcessingStatus("Building timeline video…");
+      const assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
+      setLastVideoPath(assembled);
+      return assembled;
     } finally { recorder.current = null; videoRecorder.current = null; setProcessingStatus(null); }
   };
 
-  return { elapsed, paused, lastVideoPath, processingStatus, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop };
+  const removeSection = async (id: string) => {
+    const next = sections.filter((section) => section.id !== id);
+    setSections(next);
+    if (retakeSectionId === id) setRetakeSectionId(null);
+    if (next.length > 1) setProcessingStatus("Rebuilding timeline video…");
+    try {
+      const current = useAppStore.getState();
+      const assembled = await assembleRecordingSections(current.settingsFolder, next.flatMap((item) => item.videoPath ? [item.videoPath] : []), timelineId.current);
+      setLastVideoPath(assembled);
+    } finally { setProcessingStatus(null); }
+  };
+
+  const retakeSection = (id: string) => {
+    const section = sections.find((item) => item.id === id);
+    if (!section) return;
+    setRetakeSectionId(id);
+    store.goTo(section.slide, section.step);
+  };
+
+  return { elapsed, paused, lastVideoPath, processingStatus, sections, retakeSectionId, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop, removeSection, retakeSection };
 }

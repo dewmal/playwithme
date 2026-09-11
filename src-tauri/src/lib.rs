@@ -466,6 +466,95 @@ fn run_ffmpeg(input: &Path, output: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn assemble_recording_sections(
+    settings_folder: String,
+    sources: Vec<String>,
+    timeline_id: String,
+) -> Result<String, String> {
+    if sources.is_empty() {
+        return Err("The recording timeline has no sections".into());
+    }
+    if timeline_id.is_empty()
+        || !timeline_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("Invalid recording timeline id".into());
+    }
+    let settings = settings_path(&settings_folder)?;
+    let exports = settings.join("exports");
+    fs::create_dir_all(&exports).map_err(|error| error.to_string())?;
+    let allowed_root = exports.canonicalize().map_err(|error| error.to_string())?;
+    let mut validated = Vec::with_capacity(sources.len());
+    for source in sources {
+        let canonical = PathBuf::from(source)
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let is_mp4 = canonical
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("mp4"));
+        if !canonical.starts_with(&allowed_root) || !is_mp4 {
+            return Err("Recording sections must be MP4 files created by this project".into());
+        }
+        validated.push(canonical);
+    }
+    let list_path = exports.join(format!("{timeline_id}-sections.txt"));
+    let list = validated
+        .iter()
+        .map(|path| format!("file '{}'", path.to_string_lossy().replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&list_path, list).map_err(|error| error.to_string())?;
+    let output = exports.join(format!("{timeline_id}.mp4"));
+    let mut last_error = "FFmpeg was not found. Install FFmpeg and try again".to_string();
+    for program in [
+        "ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ] {
+        match Command::new(program)
+            .args(["-y", "-f", "concat", "-safe", "0", "-i"])
+            .arg(&list_path)
+            .args([
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+            ])
+            .arg(&output)
+            .status()
+        {
+            Ok(status) if status.success() => {
+                let _ = fs::remove_file(&list_path);
+                return Ok(output.to_string_lossy().into_owned());
+            }
+            Ok(_) => {
+                last_error = "FFmpeg failed to assemble the recording sections".into();
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                last_error = format!("FFmpeg could not start: {error}");
+                break;
+            }
+        }
+    }
+    let _ = fs::remove_file(&list_path);
+    Err(last_error)
+}
+
+#[tauri::command]
 fn write_binary(path: String, bytes: Vec<u8>) -> Result<(), String> {
     let target = Path::new(&path);
     if target.extension().and_then(|value| value.to_str()) != Some("pdf") {
@@ -555,6 +644,7 @@ pub fn run() {
             create_presentation,
             save_presentation,
             save_session,
+            assemble_recording_sections,
             write_binary,
             copy_video,
             transcode_video,

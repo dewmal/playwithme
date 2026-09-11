@@ -83,6 +83,13 @@ export async function saveSession(folder: string | null, settingsFolder: string 
   return invoke<string | null>("save_session", { folder, settingsFolder, presentationFile, session, audioBytes, videoBytes });
 }
 
+export async function assembleRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string) {
+  if (!sources.length) return null;
+  if (sources.length === 1) return sources[0];
+  if (!settingsFolder || !isTauri()) return sources.at(-1) ?? null;
+  return invoke<string>("assemble_recording_sections", { settingsFolder, sources, timelineId });
+}
+
 export async function openMicrophoneSettings() {
   if (!isTauri()) return false;
   await invoke("open_microphone_settings");

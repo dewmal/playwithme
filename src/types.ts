@@ -24,6 +24,14 @@ export interface SessionData {
   id: string; startedAt: string; duration: number; events: TimelineEvent[]; outputs: Record<string, CellOutput>; drawings: Drawing[];
 }
 
+export interface RecordingSection {
+  id: string;
+  duration: number;
+  slide: number;
+  step: number;
+  videoPath: string | null;
+}
+
 export interface CameraLayout {
   /** Normalized against the slide, so preview and recorded output stay aligned. */
   x: number;
