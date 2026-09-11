@@ -67,7 +67,7 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
         return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} initialCode={source} theme={resolvedCodeTheme} />;
       }
       if (match?.[1] === "echarts") {
-        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} />;
+        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} replayKey={slide?.id ?? "slide"} />;
       }
       return <code className={props.className}>{props.children}</code>;
     },

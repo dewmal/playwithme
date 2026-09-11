@@ -10,7 +10,7 @@ function parseOption(source: string): EChartsOption {
   return value as EChartsOption;
 }
 
-export function EChart({ source, theme }: { source: string; theme: "light" | "dark" }) {
+export function EChart({ source, theme, replayKey }: { source: string; theme: "light" | "dark"; replayKey: string }) {
   const container = useRef<HTMLDivElement>(null);
   const [renderFailure, setRenderFailure] = useState<{ source: string; message: string } | null>(null);
   const parsed = useMemo(() => {
@@ -31,7 +31,8 @@ export function EChart({ source, theme }: { source: string; theme: "light" | "da
     resizeObserver.observe(element);
 
     try {
-      const option = document.body.classList.contains("exporting")
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      const option = document.body.classList.contains("exporting") || reduceMotion
         ? { ...parsed.option, animation: false }
         : parsed.option;
       chart.setOption(option, { notMerge: true });
@@ -43,7 +44,7 @@ export function EChart({ source, theme }: { source: string; theme: "light" | "da
       resizeObserver.disconnect();
       chart.dispose();
     };
-  }, [parsed.option, source, theme]);
+  }, [parsed.option, replayKey, source, theme]);
 
   const error = parsed.error ?? (renderFailure?.source === source ? renderFailure.message : null);
   return <div className={`echart-frame${error ? " invalid" : ""}`}>
