@@ -4,6 +4,10 @@ import { useAppStore } from "../store";
 import { saveSession } from "../lib/native";
 import type { SessionData } from "../types";
 
+const VIDEO_WIDTH = 3840;
+const VIDEO_HEIGHT = 2160;
+const VIDEO_BIT_RATE = 24_000_000;
+
 export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null); const videoRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]); const videoChunks = useRef<Blob[]>([]); const [elapsed, setElapsed] = useState(0); const [lastVideoPath, setLastVideoPath] = useState<string | null>(null); const [processingStatus, setProcessingStatus] = useState<string | null>(null); const timer = useRef<number>(0); const frameTimer = useRef<number>(0); const renderingFrames = useRef(false);
@@ -11,14 +15,30 @@ export function useRecorder() {
   const createSlideStream = async () => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
-    const output = document.createElement("canvas"); output.width = 1600; output.height = 900;
+    const output = document.createElement("canvas"); output.width = VIDEO_WIDTH; output.height = VIDEO_HEIGHT;
     const context = output.getContext("2d");
     if (!context) throw new Error("Video rendering is not supported on this device");
     renderingFrames.current = true;
     const renderFrame = async () => {
       if (!renderingFrames.current) return;
       try {
-        const frame = await html2canvas(slide, { scale: 1, backgroundColor: "#f3efe7", useCORS: true, logging: false });
+        const bounds = slide.getBoundingClientRect();
+        const renderScale = Math.max(VIDEO_WIDTH / bounds.width, VIDEO_HEIGHT / bounds.height);
+        const frame = await html2canvas(slide, {
+          // Capture only the element's real bounds. Giving html2canvas a larger
+          // width/height expands its viewport and records the surrounding stage.
+          // Rendering at the output scale keeps text and drawings sharp in 4K.
+          scale: renderScale,
+          backgroundColor: "#f4f0e8", useCORS: true, logging: false,
+          onclone: (documentClone) => {
+            const clonedSlide = documentClone.querySelector<HTMLElement>(".slide-canvas");
+            if (!clonedSlide) return;
+            clonedSlide.style.setProperty("box-shadow", "none", "important");
+            clonedSlide.style.setProperty("background", "#f4f0e8", "important");
+          },
+        });
+        context.fillStyle = "#f4f0e8";
+        context.fillRect(0, 0, output.width, output.height);
         context.drawImage(frame, 0, 0, output.width, output.height);
       } finally {
         if (renderingFrames.current) frameTimer.current = window.setTimeout(renderFrame, 100);
@@ -42,7 +62,7 @@ export function useRecorder() {
     setLastVideoPath(null); chunks.current = []; recorder.current = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : undefined });
     recorder.current.ondataavailable = (e) => { if (e.data.size) chunks.current.push(e.data); };
     const combined = new MediaStream([...slideStream.getVideoTracks(), ...stream.getAudioTracks()]);
-    videoChunks.current = []; videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm" });
+    videoChunks.current = []; videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm", videoBitsPerSecond: VIDEO_BIT_RATE, audioBitsPerSecond: 192_000 });
     videoRecorder.current.ondataavailable = (e) => { if (e.data.size) videoChunks.current.push(e.data); };
     videoRecorder.current.start(1000);
     recorder.current.start(1000); store.startRecording(); setElapsed(0); setProcessingStatus(null);

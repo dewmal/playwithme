@@ -142,7 +142,15 @@ fn run_ffmpeg(input: &Path, output: &Path) -> Result<(), String> {
         let result = Command::new(program)
             .args(["-y", "-i"])
             .arg(input)
-            .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac"])
+            .args([
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+            ])
             .arg(output)
             .status();
         match result {
