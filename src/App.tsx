@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LayoutDashboard, LoaderCircle, Menu, Mic, Moon, PanelRight, Pause, Play, Save, Sparkles, Sun, VideoOff } from "lucide-react";
+import { Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LayoutDashboard, LoaderCircle, Menu, Mic, Moon, PanelRight, Pause, Play, Save, Sparkles, Sun, VideoOff } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { DrawingToolbar } from "./components/DrawingToolbar";
@@ -120,12 +120,11 @@ export default function App() {
         </div>
       </header>
       <section className="workspace-body"><SlideCanvas cameraStream={recorder.cameraStream} showCamera={store.recording && recorder.cameraEnabled} cameraLayout={recorder.cameraLayout} moveCamera={recorder.setCameraLayout} notify={notify} />{source && store.mode === "edit" && !presenterView && <SourcePanel close={() => setSource(false)} />}{presenterView && <PresenterPanel elapsed={recorder.elapsed} paused={recorder.paused} microphone={recorder.selectedDeviceLabel} inputLevel={recorder.inputLevel} close={() => setPresenterView(false)} />}</section>
-      <DrawingToolbar />
+      <DrawingToolbar canAnimateChart={hasVisibleChart && (store.mode === "present" || store.recording)} animationDisabled={store.recording && recorder.paused} animateChart={animateCharts} />
       <footer className="controlbar">
         <div className="shortcut-hint"><Sparkles /> <span><kbd>Space</kbd> next step</span><span><kbd>D</kbd> draw</span>{hasVisibleChart && (store.mode === "present" || store.recording) ? <span><kbd>A</kbd> animate chart</span> : <span><kbd>R</kbd> run</span>}</div>
         <div className="nav-controls"><button onClick={store.previous} disabled={store.slideIndex === 0 && store.step === 0}><ChevronLeft /></button><strong>{store.slideIndex + 1}</strong><span>/ {store.slides.length}</span><button onClick={store.next} disabled={store.slideIndex === store.slides.length - 1 && store.step === store.slides.at(-1)!.steps.length - 1}><ChevronRight /></button></div>
         <div className="session-controls">
-          {hasVisibleChart && (store.mode === "present" || store.recording) && <button className="animate-chart" onClick={animateCharts} disabled={store.recording && recorder.paused} title={store.recording && recorder.paused ? "Resume recording to animate the chart" : "Replay chart animation (A)"}><BarChart3 /> Animate chart</button>}
           {recorder.processingStatus && !microphoneOpen ? <button className="processing" disabled><LoaderCircle className="spin" /><b>{recorder.processingStatus}</b></button> : store.recording ? <><button className={recorder.cameraEnabled ? "camera-toggle active" : "camera-toggle"} onClick={() => recorder.toggleCamera().catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} title={recorder.cameraEnabled ? "Turn camera off" : "Turn camera on"}>{recorder.cameraEnabled ? <Camera /> : <VideoOff />} Camera</button><button className={presenterView ? "presenter-toggle active" : "presenter-toggle"} onClick={() => setPresenterView(!presenterView)} title="Toggle presenter view"><PanelRight /> Presenter</button><button className={recorder.paused ? "resume-recording" : "pause-recording"} onClick={recorder.paused ? recorder.resume : recorder.pause} title={recorder.paused ? "Resume recording" : "Pause recording"}>{recorder.paused ? <Play /> : <Pause />}{recorder.paused ? "Resume" : "Pause"}</button><button className={`recording${recorder.paused ? " paused" : ""}`} onClick={stopRecording}><CircleStop /><b>{recorder.paused ? "PAUSED" : "REC"}</b> {clock(recorder.elapsed)}</button></> : <button onClick={openMicrophoneSetup}><Mic /> Record</button>}
           <button onClick={togglePresent} title="Fullscreen"><Fullscreen /></button>
         </div>
