@@ -10,7 +10,7 @@ interface AppState {
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordStarted: number | null; events: TimelineEvent[];
   setMarkdown: (value: string) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
-  goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
+  addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
   addDrawing: (drawing: Drawing) => void; undo: () => void; redo: () => void; clearSlide: () => void;
@@ -30,6 +30,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { markdown, slides, slideIndex: Math.min(state.slideIndex, Math.max(0, slides.length - 1)), step: 0 };
   }),
   loadDeck: (folder, presentationFile, presentationFiles, markdown) => set({ folder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
+  addSlide: () => {
+    const current = get();
+    const content = "# Untitled slide\n\nStart writing your presentation.";
+    const markdown = current.markdown.trim()
+      ? `${current.markdown.trimEnd()}\n\n---\n\n${content}\n`
+      : `${content}\n`;
+    const slides = parseSlides(markdown);
+    set({ markdown, slides, slideIndex: slides.length - 1, step: 0 });
+    get().addEvent({ type: "slide", slide: slides.length - 1 });
+  },
   goTo: (slideIndex, step = 0) => {
     set({ slideIndex, step }); get().addEvent({ type: "slide", slide: slideIndex });
   },
