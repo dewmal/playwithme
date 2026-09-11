@@ -13,3 +13,10 @@ export interface TimelineEvent { time: number; type: string; slide?: number; ste
 export interface SessionData {
   id: string; startedAt: string; duration: number; events: TimelineEvent[]; outputs: Record<string, CellOutput>; drawings: Drawing[];
 }
+
+export interface CameraLayout {
+  /** Normalized against the slide, so preview and recorded output stay aligned. */
+  x: number;
+  y: number;
+  size: number;
+}

@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
 import { saveSession } from "../lib/native";
-import type { SessionData } from "../types";
+import type { CameraLayout, SessionData } from "../types";
 
 const VIDEO_WIDTH = 3840;
 const VIDEO_HEIGHT = 2160;
 const VIDEO_BIT_RATE = 24_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
+const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 };
 
 export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null);
@@ -15,6 +16,7 @@ export function useRecorder() {
   const previewStream = useRef<MediaStream | null>(null);
   const cameraPreviewStream = useRef<MediaStream | null>(null);
   const cameraEnabledRef = useRef(true);
+  const cameraLayoutRef = useRef<CameraLayout>(DEFAULT_CAMERA_LAYOUT);
   const audioContext = useRef<AudioContext | null>(null);
   const meterFrame = useRef(0);
   const chunks = useRef<Blob[]>([]);
@@ -31,6 +33,7 @@ export function useRecorder() {
   const [selectedCameraLabel, setSelectedCameraLabel] = useState("Default camera");
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [cameraLayout, setCameraLayoutState] = useState<CameraLayout>(DEFAULT_CAMERA_LAYOUT);
   const [cameraPermission, setCameraPermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
   const [cameraError, setCameraError] = useState("");
   const [microphonePermission, setMicrophonePermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
@@ -199,6 +202,17 @@ export function useRecorder() {
     if (enabled && !cameraPreviewStream.current) await openCamera();
   };
 
+  const setCameraLayout = (layout: CameraLayout) => {
+    const size = Math.min(0.34, Math.max(0.14, layout.size));
+    const next = {
+      size,
+      x: Math.min(1 - size, Math.max(0, layout.x)),
+      y: Math.min(1 - size, Math.max(0, layout.y)),
+    };
+    cameraLayoutRef.current = next;
+    setCameraLayoutState(next);
+  };
+
   useEffect(() => {
     const handleDeviceChange = () => { refreshMicrophones().catch(() => undefined); };
     navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
@@ -249,8 +263,10 @@ export function useRecorder() {
         context.fillRect(0, 0, output.width, output.height);
         context.drawImage(frame, 0, 0, output.width, output.height);
         if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-          const width = 720; const height = 405; const margin = 90; const radius = 38;
-          const x = output.width - width - margin; const y = output.height - height - margin;
+          const layout = cameraLayoutRef.current;
+          const width = output.width * layout.size; const height = output.height * layout.size;
+          const x = output.width * layout.x; const y = output.height * layout.y;
+          const radius = Math.max(18, width * 0.053);
           context.save();
           context.beginPath();
           context.roundRect(x, y, width, height, radius);
@@ -335,5 +351,5 @@ export function useRecorder() {
     } finally { recorder.current = null; videoRecorder.current = null; setProcessingStatus(null); }
   };
 
-  return { elapsed, paused, lastVideoPath, processingStatus, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop };
+  return { elapsed, paused, lastVideoPath, processingStatus, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop };
 }

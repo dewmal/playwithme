@@ -1,5 +1,6 @@
-import { AudioLines, Camera, ExternalLink, Mic, Play, RotateCcw, ShieldAlert, VideoOff, X } from "lucide-react";
+import { AudioLines, Camera, ExternalLink, Maximize2, Mic, Move, Play, RotateCcw, ShieldAlert, VideoOff, X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import type { CameraLayout } from "../types";
 
 type Props = {
   microphones: MediaDeviceInfo[];
@@ -12,6 +13,7 @@ type Props = {
   selectedCameraLabel: string;
   cameraStream: MediaStream | null;
   cameraEnabled: boolean;
+  cameraLayout: CameraLayout;
   cameraPermission: "prompt" | "granted" | "denied" | "unavailable";
   cameraError: string;
   permission: "prompt" | "granted" | "denied" | "unavailable";
@@ -21,12 +23,13 @@ type Props = {
   select: (deviceId: string) => void;
   selectCamera: (deviceId: string) => void;
   toggleCamera: () => void;
+  setCameraLayout: (layout: CameraLayout) => void;
   start: () => void;
   retry: () => void;
   openSettings: () => void;
 };
 
-export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDeviceLabel, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraPermission, cameraError, permission, error, busy, close, select, selectCamera, toggleCamera, start, retry, openSettings }: Props) {
+export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDeviceLabel, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, permission, error, busy, close, select, selectCamera, toggleCamera, setCameraLayout, start, retry, openSettings }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (!video.current) return;
@@ -36,6 +39,12 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
   }, [cameraStream]);
   const points = waveform.map((value, index) => `${(index / (waveform.length - 1)) * 100},${20 - value * 17}`).join(" ");
   const hearingInput = inputLevel > 0.025;
+  const cameraPosition = (horizontal: "left" | "right", vertical: "top" | "bottom", size = cameraLayout.size) => {
+    const margin = 0.035;
+    setCameraLayout({ size, x: horizontal === "left" ? margin : 1 - size - margin, y: vertical === "top" ? margin : 1 - size - margin });
+  };
+  const selectedCorner = `${cameraLayout.y < 0.5 ? "top" : "bottom"}-${cameraLayout.x < 0.5 ? "left" : "right"}`;
+  const cameraSize = (size: number) => cameraPosition(cameraLayout.x < 0.5 ? "left" : "right", cameraLayout.y < 0.5 ? "top" : "bottom", size);
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}>
     <section className="microphone-dialog" role="dialog" aria-modal="true" aria-labelledby="microphone-title">
@@ -60,6 +69,19 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
         {!cameras.length && <option value="">Finding cameras…</option>}
         {cameras.map((device, index) => <option value={device.deviceId} key={device.deviceId || index}>{device.label || `Camera ${index + 1}`}</option>)}
       </select></>}
+
+      {cameraEnabled && <div className="camera-layout-controls">
+        <div><span><Move /> Position</span><div className="camera-position-grid">
+          {(["top-left", "top-right", "bottom-left", "bottom-right"] as const).map((position) => {
+            const [vertical, horizontal] = position.split("-") as ["top" | "bottom", "left" | "right"];
+            return <button type="button" key={position} className={selectedCorner === position ? "active" : ""} onClick={() => cameraPosition(horizontal, vertical)} aria-label={position.replace("-", " ")}><i /></button>;
+          })}
+        </div></div>
+        <div><span><Maximize2 /> Size</span><div className="camera-size-options">
+          {([{ label: "Small", size: 0.14 }, { label: "Medium", size: 0.1875 }, { label: "Large", size: 0.28 }] as const).map((option) => <button type="button" key={option.label} className={Math.abs(cameraLayout.size - option.size) < 0.02 ? "active" : ""} onClick={() => cameraSize(option.size)}>{option.label}</button>)}
+        </div></div>
+        <small>You can drag the camera directly on the slide after recording starts.</small>
+      </div>}
 
       <label className="microphone-select-label" htmlFor="microphone-select"><Mic /> Microphone</label>
       <select id="microphone-select" value={selectedDeviceId} onChange={(event) => select(event.target.value)} disabled={busy || permission !== "granted" || !microphones.length}>
