@@ -98,7 +98,7 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
         <div className="input-status"><AudioLines /><span><b>{hearingInput ? "Input detected" : "Waiting for sound"}</b><small>{selectedDeviceLabel}</small></span><i><em style={{ width: `${Math.max(3, inputLevel * 100)}%` }} /></i></div>
       </div>
 
-      <label className="recording-reset-option"><input type="checkbox" checked={resetPresentation} onChange={(event) => setResetPresentation(event.target.checked)} disabled={busy} /><span><b>Start with a clean presentation</b><small>Clear all drawings and code outputs when recording starts.</small></span></label>
+      <label className="recording-reset-option"><input type="checkbox" checked={resetPresentation} onChange={(event) => setResetPresentation(event.target.checked)} disabled={busy} /><span><b>Start with a clean recording</b><small>Clear all drawings, code outputs, and previously recorded videos when recording starts.</small></span></label>
       <footer><span>{cameraEnabled ? `Camera: ${selectedCameraLabel}` : "Camera is off"}. Choose your microphone, then speak to test it.</span><span className="microphone-actions">{permission !== "granted" && <button className="retry-microphone" onClick={retry} disabled={busy}><RotateCcw /> Try again</button>}<button onClick={() => openRecordingView(resetPresentation)} disabled={busy || permission !== "granted" || !microphones.length}><PanelRight /> Open recording view</button></span></footer>
     </section>
   </div>;

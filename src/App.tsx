@@ -69,7 +69,13 @@ export default function App() {
   const closeMicrophoneSetup = () => { recorder.cancelMicrophoneSetup(); setMicrophoneOpen(false); };
   const openRecordingView = (resetPresentation: boolean) => { setRecordingReset(resetPresentation); setMicrophoneOpen(false); setSource(false); setPresenterView(true); };
   const closePresenterView = () => { if (!store.recording) recorder.cancelMicrophoneSetup(); setPresenterView(false); };
-  const startRecording = async () => { try { await recorder.start(recorder.sections.length === 0 && recordingReset); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
+  const startRecording = async () => {
+    try {
+      const startFresh = recordingReset && !recorder.retakeSectionId;
+      await recorder.start(startFresh);
+      if (startFresh) setRecordingReset(false);
+    } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); }
+  };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Section saved to the timeline" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } };
   const finishRecording = () => { recorder.cancelMicrophoneSetup(); setPresenterView(false); notify(recorder.lastVideoPath ? "Timeline recording ready to export" : "Recording view closed"); };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };

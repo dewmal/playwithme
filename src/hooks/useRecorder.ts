@@ -286,7 +286,7 @@ export function useRecorder() {
     return () => { cancelled = true; };
   }, [store.folder, store.settingsFolder, store.presentationFile]);
 
-  const createSlideStream = async (resetPresentation = false) => {
+  const createSlideStream = async () => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
     const output = document.createElement("canvas"); output.width = VIDEO_WIDTH; output.height = VIDEO_HEIGHT;
@@ -299,7 +299,6 @@ export function useRecorder() {
       await camera.play().catch(() => undefined);
     }
     renderingFrames.current = true;
-    if (resetPresentation) store.resetForRecording();
     const renderFrame = async () => {
       if (!renderingFrames.current) return;
       try {
@@ -364,7 +363,23 @@ export function useRecorder() {
         cameraEnabledRef.current = false;
         setCameraEnabled(false);
       });
-      slideStream = await createSlideStream(resetPresentation);
+      if (resetPresentation) {
+        setProcessingStatus("Clearing previous recording…");
+        const current = useAppStore.getState();
+        await clearRecordingTimeline(current.settingsFolder, current.presentationFile);
+        sectionsRef.current.forEach((section) => { if (section.previewUrl) URL.revokeObjectURL(section.previewUrl); });
+        sectionsRef.current = [];
+        recordingFiles.current = [];
+        timelineId.current = `timeline-${Date.now()}`;
+        setSections([]);
+        setRetakeSectionId(null);
+        setLastVideoPath(null);
+        store.resetForRecording();
+        // Let React commit the clean store state before html2canvas captures the
+        // first frame. Without this paint boundary, old ink can enter the video.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }
+      slideStream = await createSlideStream();
     } catch (error) {
       renderingFrames.current = false; clearTimeout(frameTimer.current); slideStream?.getTracks().forEach((track) => track.stop()); stopPreview(); setProcessingStatus(null);
       const detail = error instanceof Error && error.message ? `: ${error.message}` : "";
