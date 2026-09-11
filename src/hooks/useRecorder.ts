@@ -285,13 +285,13 @@ export function useRecorder() {
         }
         const bounds = slide.getBoundingClientRect();
         const renderScale = Math.max(VIDEO_WIDTH / bounds.width, VIDEO_HEIGHT / bounds.height);
+        const frameBackground = getComputedStyle(slide).backgroundColor;
         const frame = await html2canvas(slide, {
-          scale: renderScale, backgroundColor: "#f4f0e8", useCORS: true, logging: false,
+          scale: renderScale, backgroundColor: frameBackground, useCORS: true, logging: false,
           onclone: (documentClone) => {
             const clonedSlide = documentClone.querySelector<HTMLElement>(".slide-canvas");
             if (!clonedSlide) return;
             clonedSlide.style.setProperty("box-shadow", "none", "important");
-            clonedSlide.style.setProperty("background", "#f4f0e8", "important");
             clonedSlide.querySelectorAll<HTMLElement>(".cm-activeLine, .cm-activeLineGutter").forEach((element) => {
               element.style.setProperty("background", "transparent", "important");
             });
@@ -301,7 +301,7 @@ export function useRecorder() {
             documentClone.querySelector<HTMLElement>(".camera-preview")?.style.setProperty("display", "none", "important");
           },
         });
-        context.fillStyle = "#f4f0e8";
+        context.fillStyle = frameBackground;
         context.fillRect(0, 0, output.width, output.height);
         context.drawImage(frame, 0, 0, output.width, output.height);
         if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
