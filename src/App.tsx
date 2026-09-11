@@ -10,7 +10,7 @@ import { useAppStore } from "./store";
 import { choosePresentationProject, chooseSettingsRoot, createPresentation, openMicrophoneSettings, openPresentation, resolveSettingsFolder, savePresentation, settingsCacheFolder, settingsHomeFolder, type SettingsLocation } from "./lib/native";
 import { PresentationPicker } from "./components/PresentationPicker";
 import { useRecorder } from "./hooks/useRecorder";
-import { NEW_PRESENTATION_MARKDOWN } from "./lib/sample";
+import { NEW_PRESENTATION_MARKDOWN, SAMPLE_MARKDOWN } from "./lib/sample";
 import { PresenterPanel } from "./components/PresenterPanel";
 import { MicrophoneDialog } from "./components/MicrophoneDialog";
 import { ProjectDashboard, type RecentProject } from "./components/ProjectDashboard";
@@ -90,7 +90,7 @@ export default function App() {
   }, [store.folder, store.settingsFolder, store.presentationFile, store.markdown, store.drawings, store.outputs]);
 
   if (view === "dashboard") return <>
-    <ProjectDashboard recents={recents} theme={store.theme} openProject={openDeck} newPresentation={newDeck} openRecent={openRecentProject} openSample={() => setView("editor")} removeRecent={(folder) => setRecents((current) => { const next = current.filter((project) => project.folder !== folder); localStorage.setItem("presenta:recent-projects", JSON.stringify(next)); return next; })} toggleTheme={() => store.setTheme(store.theme === "light" ? "dark" : "light")} openSettings={() => setSettingsOpen(true)} />
+    <ProjectDashboard recents={recents} theme={store.theme} openProject={openDeck} newPresentation={newDeck} openRecent={openRecentProject} openSample={() => { store.loadDeck(null, null, null, [], SAMPLE_MARKDOWN); setView("editor"); }} removeRecent={(folder) => setRecents((current) => { const next = current.filter((project) => project.folder !== folder); localStorage.setItem("presenta:recent-projects", JSON.stringify(next)); return next; })} toggleTheme={() => store.setTheme(store.theme === "light" ? "dark" : "light")} openSettings={() => setSettingsOpen(true)} />
     {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, picker.settingsFolder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
     {settingsOpen && <ProjectSettingsDialog value={settingsLocation} homeFolder={homeSettings} cacheFolder={cacheSettings} theme={store.theme} close={() => setSettingsOpen(false)} change={updateSettingsLocation} chooseFolder={chooseCustomSettings} />}
     {toast && <div className="toast">{toast}</div>}

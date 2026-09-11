@@ -57,7 +57,7 @@ export function ProjectDashboard({
         <div className="quick-grid">
           <button className="quick-card create-card" onClick={newPresentation}><span className="quick-icon"><FilePlus2 /></span><span><b>Blank presentation</b><small>Start with a clean, beautifully structured deck</small></span><ArrowRight /></button>
           <button className="quick-card open-card" onClick={openProject}><span className="quick-icon"><FolderOpen /></span><span><b>Open a project</b><small>Choose a folder with one or more Markdown decks</small></span><ArrowRight /></button>
-          <button className="quick-card sample-card" onClick={openSample}><span className="sample-mini"><i /><strong>Make ideas<br/>move.</strong><em>Presenta</em></span><span><b>Explore the sample</b><small>See reveals, code cells, drawing, and recording</small></span><Play /></button>
+          <button className="quick-card sample-card" onClick={openSample}><span className="sample-mini"><i /><strong>Make ideas<br/>move.</strong><em>Presenta</em></span><span><b>Explore the sample</b><small>See charts, columns, reveals, live code, and recording</small></span><Play /></button>
         </div>
       </section>
 
