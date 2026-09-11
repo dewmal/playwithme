@@ -7,7 +7,7 @@ import { SlideMarkdown } from "./SlideMarkdown";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
-export function PresenterPanel({ elapsed, paused, microphone, inputLevel, close }: { elapsed: number; paused: boolean; microphone: string; inputLevel: number; close: () => void }) {
+export function PresenterPanel({ elapsed, paused, recording, microphone, inputLevel, close }: { elapsed: number; paused: boolean; recording: boolean; microphone: string; inputLevel: number; close: () => void }) {
   const { slides, slideIndex, theme } = useAppStore();
   const current = slides[slideIndex];
   const next = slides[slideIndex + 1];
@@ -18,9 +18,9 @@ export function PresenterPanel({ elapsed, paused, microphone, inputLevel, close 
       <span className="presenter-head-actions"><AudioLines aria-label="Audio input active" /><button onClick={close} title="Close presenter view" aria-label="Close presenter view"><X /></button></span>
     </header>
 
-    <section className={`presenter-timer${paused ? " paused" : ""}`} aria-label={`${paused ? "Paused" : "Recording"} at ${clock(elapsed)}`}>
+    <section className={`presenter-timer${paused ? " paused" : ""}${recording ? "" : " ready"}`} aria-label={recording ? `${paused ? "Paused" : "Recording"} at ${clock(elapsed)}` : "Ready to record"}>
       <span className="record-dot" />
-      <div><small>{paused ? "Paused" : "Recording"}</small><b>{clock(elapsed)}</b></div>
+      <div><small>{recording ? (paused ? "Paused" : "Recording") : "Ready to record"}</small><b>{recording ? clock(elapsed) : "Press Start below"}</b></div>
       <Clock3 />
     </section>
 
