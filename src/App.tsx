@@ -7,39 +7,52 @@ import { SourcePanel } from "./components/SourcePanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { HelpDialog } from "./components/HelpDialog";
 import { useAppStore } from "./store";
-import { choosePresentationProject, createPresentation, openMicrophoneSettings, openPresentation, savePresentation } from "./lib/native";
+import { choosePresentationProject, chooseSettingsRoot, createPresentation, openMicrophoneSettings, openPresentation, resolveSettingsFolder, savePresentation, settingsCacheFolder, settingsHomeFolder, type SettingsLocation } from "./lib/native";
 import { PresentationPicker } from "./components/PresentationPicker";
 import { useRecorder } from "./hooks/useRecorder";
 import { NEW_PRESENTATION_MARKDOWN } from "./lib/sample";
 import { PresenterPanel } from "./components/PresenterPanel";
 import { MicrophoneDialog } from "./components/MicrophoneDialog";
 import { ProjectDashboard, type RecentProject } from "./components/ProjectDashboard";
+import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
 
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 export default function App() {
-  const store = useAppStore(); const [view, setView] = useState<"dashboard" | "editor">("dashboard"); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [presenterView, setPresenterView] = useState(false); const [microphoneOpen, setMicrophoneOpen] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; presentations: string[] } | null>(null);
+  const store = useAppStore(); const [view, setView] = useState<"dashboard" | "editor">("dashboard"); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [presenterView, setPresenterView] = useState(false); const [microphoneOpen, setMicrophoneOpen] = useState(false); const [toast, setToast] = useState(""); const [picker, setPicker] = useState<{ folder: string; settingsFolder: string; presentations: string[] } | null>(null);
+  const [settingsLocation, setSettingsLocation] = useState<SettingsLocation>(() => { try { return JSON.parse(localStorage.getItem("presenta:settings-location") ?? '{"mode":"home"}'); } catch { return { mode: "home" }; } });
+  const [homeSettings, setHomeSettings] = useState("~/.presenta");
+  const [cacheSettings, setCacheSettings] = useState("OS cache/Presenta");
   const [recents, setRecents] = useState<RecentProject[]>(() => { try { return JSON.parse(localStorage.getItem("presenta:recent-projects") ?? "[]"); } catch { return []; } });
   const recorder = useRecorder();
   const notify = (message: string, duration = 2600) => { setToast(message); window.setTimeout(() => setToast(""), duration); };
   const rememberProject = (project: Omit<RecentProject, "openedAt">) => setRecents((current) => { const next = [{ ...project, openedAt: Date.now() }, ...current.filter((item) => item.folder !== project.folder)].slice(0, 8); localStorage.setItem("presenta:recent-projects", JSON.stringify(next)); return next; });
   const newDeck = async () => {
     try {
-      const result = await createPresentation(NEW_PRESENTATION_MARKDOWN, store.folder);
+      const result = await createPresentation(NEW_PRESENTATION_MARKDOWN, settingsLocation, store.folder, store.settingsFolder);
       if (!result) return;
       const current = useAppStore.getState();
-      if (current.folder && current.presentationFile) await savePresentation(current.folder, current.presentationFile, current.markdown, current.drawings, current.outputs);
-      store.loadDeck(result.folder, result.presentationFile, result.presentations, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); rememberProject(result); setView("editor"); notify("New presentation created");
+      if (current.folder && current.presentationFile) await savePresentation(current.folder, current.settingsFolder, current.presentationFile, current.markdown, current.drawings, current.outputs);
+      store.loadDeck(result.folder, result.settingsFolder, result.presentationFile, result.presentations, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); rememberProject(result); setView("editor"); notify("New presentation created");
     } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
   };
-  const loadDeck = async (folder: string, presentationFile: string, presentations: string[]) => {
+  const loadDeck = async (folder: string, settingsFolder: string, presentationFile: string, presentations: string[]) => {
     const current = useAppStore.getState();
-    if (current.folder && current.presentationFile) await savePresentation(current.folder, current.presentationFile, current.markdown, current.drawings, current.outputs);
-    const result = await openPresentation(folder, presentationFile, presentations);
-    store.loadDeck(result.folder, result.presentationFile, result.presentations, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); rememberProject(result); setPicker(null); setView("editor"); notify(`${presentationFile} loaded`);
+    if (current.folder && current.presentationFile) await savePresentation(current.folder, current.settingsFolder, current.presentationFile, current.markdown, current.drawings, current.outputs);
+    const result = await openPresentation(folder, settingsFolder, presentationFile, presentations);
+    store.loadDeck(result.folder, result.settingsFolder, result.presentationFile, result.presentations, result.markdown); useAppStore.setState({ drawings: result.drawings, outputs: result.outputs }); rememberProject(result); setPicker(null); setView("editor"); notify(`${presentationFile} loaded`);
   };
-  const openDeck = async () => { try { const project = await choosePresentationProject(); if (!project) { notify("Folder opening is available in the desktop app"); return; } if (!project.presentations.length) { notify("No Markdown presentations found in this folder"); return; } if (project.presentations.length === 1) await loadDeck(project.folder, project.presentations[0], project.presentations); else setPicker(project); } catch (error) { notify(error instanceof Error ? error.message : String(error), 6000); } };
-  const saveDeck = async () => { await savePresentation(store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs); notify(store.folder ? "Presentation saved" : "Draft saved locally"); };
+  const openDeck = async () => { try { const project = await choosePresentationProject(settingsLocation); if (!project) { notify("Folder opening is available in the desktop app"); return; } if (!project.presentations.length) { notify("No Markdown presentations found in this folder"); return; } if (project.presentations.length === 1) await loadDeck(project.folder, project.settingsFolder, project.presentations[0], project.presentations); else setPicker(project); } catch (error) { notify(error instanceof Error ? error.message : String(error), 6000); } };
+  const saveDeck = async () => { await savePresentation(store.folder, store.settingsFolder, store.presentationFile, store.markdown, store.drawings, store.outputs); notify(store.folder ? "Presentation saved" : "Draft saved locally"); };
+  const updateSettingsLocation = (location: SettingsLocation) => { setSettingsLocation(location); localStorage.setItem("presenta:settings-location", JSON.stringify(location)); };
+  const chooseCustomSettings = async () => { const customRoot = await chooseSettingsRoot(); if (customRoot) updateSettingsLocation({ mode: "custom", customRoot }); };
+  const openRecentProject = async (project: RecentProject) => {
+    try {
+      const settingsFolder = project.settingsFolder || await resolveSettingsFolder(project.folder, { mode: "project" });
+      if (project.presentations.length === 1) await loadDeck(project.folder, settingsFolder, project.presentations[0], project.presentations);
+      else setPicker({ ...project, settingsFolder });
+    } catch (error) { notify(error instanceof Error ? error.message : String(error), 6000); }
+  };
   const requestMicrophone = async () => { try { await recorder.prepareMicrophone(); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
   const openMicrophoneSetup = async () => { setMicrophoneOpen(true); await requestMicrophone(); };
   const showMicrophoneSettings = async () => { try { if (!await openMicrophoneSettings()) notify("Allow microphone access for this site in your browser settings", 6000); } catch { notify("Open System Settings and allow microphone access for Presenta", 6000); } };
@@ -47,6 +60,11 @@ export default function App() {
   const startRecording = async (resetPresentation = false) => { try { await recorder.start(resetPresentation); setMicrophoneOpen(false); setSource(false); setPresenterView(true); } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); } };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Recording ready to export" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } finally { setPresenterView(false); } };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };
+
+  useEffect(() => {
+    settingsHomeFolder().then(setHomeSettings).catch(() => undefined);
+    settingsCacheFolder().then(setCacheSettings).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -66,21 +84,22 @@ export default function App() {
 
   useEffect(() => {
     if (!store.folder) return;
-    const timeout = window.setTimeout(() => savePresentation(store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs).catch(() => undefined), 800);
+    const timeout = window.setTimeout(() => savePresentation(store.folder, store.settingsFolder, store.presentationFile, store.markdown, store.drawings, store.outputs).catch(() => undefined), 800);
     return () => window.clearTimeout(timeout);
-  }, [store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs]);
+  }, [store.folder, store.settingsFolder, store.presentationFile, store.markdown, store.drawings, store.outputs]);
 
   if (view === "dashboard") return <>
-    <ProjectDashboard recents={recents} theme={store.theme} openProject={openDeck} newPresentation={newDeck} openRecent={(project) => project.presentations.length === 1 ? loadDeck(project.folder, project.presentations[0], project.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000)) : setPicker(project)} openSample={() => setView("editor")} removeRecent={(folder) => setRecents((current) => { const next = current.filter((project) => project.folder !== folder); localStorage.setItem("presenta:recent-projects", JSON.stringify(next)); return next; })} toggleTheme={() => store.setTheme(store.theme === "light" ? "dark" : "light")} />
-    {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
+    <ProjectDashboard recents={recents} theme={store.theme} openProject={openDeck} newPresentation={newDeck} openRecent={openRecentProject} openSample={() => setView("editor")} removeRecent={(folder) => setRecents((current) => { const next = current.filter((project) => project.folder !== folder); localStorage.setItem("presenta:recent-projects", JSON.stringify(next)); return next; })} toggleTheme={() => store.setTheme(store.theme === "light" ? "dark" : "light")} openSettings={() => setSettingsOpen(true)} />
+    {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, picker.settingsFolder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
+    {settingsOpen && <ProjectSettingsDialog value={settingsLocation} homeFolder={homeSettings} cacheFolder={cacheSettings} theme={store.theme} close={() => setSettingsOpen(false)} change={updateSettingsLocation} chooseFolder={chooseCustomSettings} />}
     {toast && <div className="toast">{toast}</div>}
   </>;
 
   return <div className={`app theme-${store.theme} mode-${store.mode}${presenterView ? " presenter-view" : ""}`}>
-    {store.sidebarOpen && store.mode === "edit" && !presenterView && <Sidebar choosePresentation={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })} />}
+    {store.sidebarOpen && store.mode === "edit" && !presenterView && <Sidebar choosePresentation={() => store.folder && store.settingsFolder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, settingsFolder: store.settingsFolder, presentations: store.presentationFiles })} />}
     <main className="workspace">
       <header className="topbar">
-        <div className="top-left"><button onClick={() => setView("dashboard")} title="Back to projects" aria-label="Back to projects"><LayoutDashboard /></button>{!store.sidebarOpen && <button onClick={() => store.setSidebar(true)} title="Show slides"><Menu /></button>}<button className="deck-name" onClick={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })}>{store.presentationFile?.split(/[\\/]/).at(-1)?.replace(/\.md$/i, "") ?? "Untitled presentation"}{store.presentationFiles.length > 1 && <ChevronDown />}</button><span className="save-state"><i /> Saved</span></div>
+        <div className="top-left"><button onClick={() => setView("dashboard")} title="Back to projects" aria-label="Back to projects"><LayoutDashboard /></button>{!store.sidebarOpen && <button onClick={() => store.setSidebar(true)} title="Show slides"><Menu /></button>}<button className="deck-name" onClick={() => store.folder && store.settingsFolder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, settingsFolder: store.settingsFolder, presentations: store.presentationFiles })}>{store.presentationFile?.split(/[\\/]/).at(-1)?.replace(/\.md$/i, "") ?? "Untitled presentation"}{store.presentationFiles.length > 1 && <ChevronDown />}</button><span className="save-state"><i /> Saved</span></div>
         <div className="top-actions">
           <button onClick={newDeck}><FilePlus2 /> New</button><button onClick={openDeck}><FolderOpen /> Open</button><button onClick={saveDeck}><Save /> Save</button><button onClick={() => setSource(!source)} className={source ? "active" : ""}><Code2 /> Source</button>
           <button onClick={() => store.setTheme(store.theme === "light" ? "dark" : "light")} title={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`} aria-label={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`}>{store.theme === "light" ? <Moon /> : <Sun />} Theme</button>
@@ -103,7 +122,7 @@ export default function App() {
     </main>
     {exportOpen && <ExportDialog close={() => setExportOpen(false)} videoPath={recorder.lastVideoPath} processingStatus={recorder.processingStatus} />}
     {helpOpen && <HelpDialog close={() => setHelpOpen(false)} />}
-    {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={store.folder === picker.folder ? store.presentationFile : null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
+    {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={store.folder === picker.folder ? store.presentationFile : null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, picker.settingsFolder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
     {microphoneOpen && <MicrophoneDialog microphones={recorder.microphones} selectedDeviceId={recorder.selectedDeviceId} selectedDeviceLabel={recorder.selectedDeviceLabel} waveform={recorder.waveform} inputLevel={recorder.inputLevel} cameras={recorder.cameras} selectedCameraId={recorder.selectedCameraId} selectedCameraLabel={recorder.selectedCameraLabel} cameraStream={recorder.cameraStream} cameraEnabled={recorder.cameraEnabled} cameraLayout={recorder.cameraLayout} cameraPermission={recorder.cameraPermission} cameraError={recorder.cameraError} permission={recorder.microphonePermission} error={recorder.microphoneError} busy={!!recorder.processingStatus} close={closeMicrophoneSetup} select={(deviceId) => recorder.selectMicrophone(deviceId).catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} selectCamera={(deviceId) => recorder.selectCamera(deviceId).catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} toggleCamera={() => recorder.toggleCamera().catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} setCameraLayout={recorder.setCameraLayout} retry={requestMicrophone} openSettings={showMicrophoneSettings} start={startRecording} />}
     {toast && <div className="toast">{toast}</div>}
   </div>;

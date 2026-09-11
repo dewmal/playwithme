@@ -1,8 +1,9 @@
-import { ArrowRight, Clock3, FilePlus2, FolderOpen, Moon, Play, Plus, Presentation, Search, Sun, Trash2 } from "lucide-react";
+import { ArrowRight, Clock3, FilePlus2, FolderOpen, Moon, Play, Plus, Presentation, Search, Settings, Sun, Trash2 } from "lucide-react";
 import type { Theme } from "../store";
 
 export interface RecentProject {
   folder: string;
+  settingsFolder: string;
   presentations: string[];
   openedAt: number;
 }
@@ -19,6 +20,7 @@ export function ProjectDashboard({
   openSample,
   removeRecent,
   toggleTheme,
+  openSettings,
 }: {
   recents: RecentProject[];
   theme: Theme;
@@ -28,6 +30,7 @@ export function ProjectDashboard({
   openSample: () => void;
   removeRecent: (folder: string) => void;
   toggleTheme: () => void;
+  openSettings: () => void;
 }) {
   return <div className={`project-dashboard theme-${theme}`}>
     <aside className="dashboard-rail">
@@ -37,6 +40,7 @@ export function ProjectDashboard({
         <button onClick={() => document.getElementById("recent-title")?.scrollIntoView({ behavior: "smooth" })}><Clock3 /> Recent</button>
       </nav>
       <div className="dashboard-rail-foot">
+        <button onClick={openSettings}><Settings /> Project settings</button>
         <button onClick={toggleTheme}>{theme === "light" ? <Moon /> : <Sun />} {theme === "light" ? "Dark mode" : "Light mode"}</button>
         <div className="dashboard-user"><span>DM</span><div><b>Local workspace</b><small>Your files stay on this device</small></div></div>
       </div>

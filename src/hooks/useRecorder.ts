@@ -348,7 +348,7 @@ export function useRecorder() {
       const current = useAppStore.getState();
       const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
-      const videoPath = await saveSession(current.folder, current.presentationFile, session, audio, video); setLastVideoPath(videoPath); return videoPath;
+      const videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video); setLastVideoPath(videoPath); return videoPath;
     } finally { recorder.current = null; videoRecorder.current = null; setProcessingStatus(null); }
   };
 

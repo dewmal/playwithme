@@ -1,18 +1,16 @@
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::{
+    collections::hash_map::DefaultHasher,
     fs,
+    hash::{Hash, Hasher},
     path::{Component, Path, PathBuf},
     process::Command,
 };
+use tauri::Manager;
 
 const APP_DIRECTORY: &str = ".presenta";
 
-fn app_folder(root: &Path) -> PathBuf {
-    root.join(APP_DIRECTORY)
-}
-
-fn ensure_app_layout(root: &Path) -> Result<PathBuf, String> {
-    let app = app_folder(root);
+fn ensure_app_layout(app: &Path, root: &Path) -> Result<PathBuf, String> {
     for directory in ["outputs", "sessions", "exports"] {
         fs::create_dir_all(app.join(directory)).map_err(|e| e.to_string())?;
     }
@@ -22,6 +20,7 @@ fn ensure_app_layout(root: &Path) -> Result<PathBuf, String> {
             settings,
             serde_json::to_string_pretty(&json!({
                 "formatVersion": 1,
+                "project": root.to_string_lossy(),
                 "presentation": "presentation.md",
                 "assets": "assets"
             }))
@@ -29,7 +28,7 @@ fn ensure_app_layout(root: &Path) -> Result<PathBuf, String> {
         )
         .map_err(|e| e.to_string())?;
     }
-    Ok(app)
+    Ok(app.to_path_buf())
 }
 
 fn ensure_folder(folder: &str) -> Result<PathBuf, String> {
@@ -43,23 +42,116 @@ fn ensure_folder(folder: &str) -> Result<PathBuf, String> {
 fn validate_presentation_file(presentation_file: &str) -> Result<&str, String> {
     let path = Path::new(presentation_file);
     let is_safe_relative_path = !path.is_absolute()
-        && path.components().all(|component| matches!(component, Component::Normal(_)));
-    let is_markdown = path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("md"));
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)));
+    let is_markdown = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("md"));
     if presentation_file.is_empty() || !is_safe_relative_path || !is_markdown {
-        return Err("Presentation files must be safe Markdown paths inside the project folder".into());
+        return Err(
+            "Presentation files must be safe Markdown paths inside the project folder".into(),
+        );
     }
     Ok(presentation_file)
 }
 
-fn presentation_state_folder(root: &Path, presentation_file: &str) -> PathBuf {
+fn presentation_state_folder(settings: &Path, presentation_file: &str) -> PathBuf {
     if presentation_file == "presentation.md" {
-        app_folder(root)
+        settings.to_path_buf()
     } else {
-        app_folder(root).join("presentations").join(presentation_file)
+        settings.join("presentations").join(presentation_file)
     }
 }
 
-fn collect_presentations(root: &Path, directory: &Path, presentations: &mut Vec<String>) -> Result<(), String> {
+fn settings_path(settings_folder: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(settings_folder);
+    if settings_folder.trim().is_empty() || !path.is_absolute() {
+        return Err("The project settings location must be an absolute path".into());
+    }
+    Ok(path)
+}
+
+fn project_storage_name(root: &Path) -> String {
+    let name = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("project");
+    let safe: String = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let mut hasher = DefaultHasher::new();
+    root.to_string_lossy().hash(&mut hasher);
+    format!("{}-{:016x}", safe.trim_matches('-'), hasher.finish())
+}
+
+fn home_settings_folder() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or("Could not determine the user home folder")?;
+    Ok(PathBuf::from(home).join(APP_DIRECTORY))
+}
+
+#[tauri::command]
+fn settings_home_folder() -> Result<String, String> {
+    Ok(home_settings_folder()?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn settings_cache_folder(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .app_cache_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn resolve_settings_folder(
+    app: tauri::AppHandle,
+    folder: String,
+    mode: String,
+    custom_root: Option<String>,
+) -> Result<String, String> {
+    let root = ensure_folder(&folder)?;
+    let settings = match mode.as_str() {
+        "project" => root.join(APP_DIRECTORY),
+        "home" => home_settings_folder()?
+            .join("projects")
+            .join(project_storage_name(&root)),
+        "cache" => app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| error.to_string())?
+            .join("projects")
+            .join(project_storage_name(&root)),
+        "custom" => {
+            let base = custom_root
+                .filter(|value| !value.trim().is_empty())
+                .ok_or("Choose a custom settings folder")?;
+            let base = PathBuf::from(base);
+            if !base.is_absolute() {
+                return Err("The custom settings folder must be an absolute path".into());
+            }
+            base.join("projects").join(project_storage_name(&root))
+        }
+        _ => return Err("Unknown project settings location".into()),
+    };
+    Ok(settings.to_string_lossy().into_owned())
+}
+
+fn collect_presentations(
+    root: &Path,
+    directory: &Path,
+    presentations: &mut Vec<String>,
+) -> Result<(), String> {
     for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let file_type = entry.file_type().map_err(|e| e.to_string())?;
@@ -72,12 +164,19 @@ fn collect_presentations(root: &Path, directory: &Path, presentations: &mut Vec<
             continue;
         }
         let path = entry.path();
-        let is_markdown = path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("md"));
+        let is_markdown = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("md"));
         if !file_type.is_file() || !is_markdown {
             continue;
         }
         let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
-        let relative = relative.components().map(|component| component.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        let relative = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
         presentations.push(relative);
     }
     Ok(())
@@ -96,17 +195,29 @@ fn list_presentations(folder: String) -> Result<Vec<String>, String> {
 fn load_presentation(folder: String, presentation_file: String) -> Result<String, String> {
     let root = ensure_folder(&folder)?;
     let name = validate_presentation_file(&presentation_file)?;
-    fs::read_to_string(root.join(name))
-        .map_err(|e| format!("Could not read {name}: {e}"))
+    fs::read_to_string(root.join(name)).map_err(|e| format!("Could not read {name}: {e}"))
 }
 
 #[tauri::command]
-fn load_drawings(folder: String, presentation_file: String) -> Result<Value, String> {
+fn load_drawings(
+    folder: String,
+    settings_folder: String,
+    presentation_file: String,
+) -> Result<Value, String> {
     let root = ensure_folder(&folder)?;
+    let settings = settings_path(&settings_folder)?;
     let name = validate_presentation_file(&presentation_file)?;
-    let current = presentation_state_folder(&root, name).join("drawings.json");
+    let current = presentation_state_folder(&settings, name).join("drawings.json");
+    let project_local =
+        presentation_state_folder(&root.join(APP_DIRECTORY), name).join("drawings.json");
     let legacy = root.join("drawings").join("drawings.json");
-    let path = if current.exists() || name != "presentation.md" { current } else { legacy };
+    let path = if current.exists() {
+        current
+    } else if project_local.exists() {
+        project_local
+    } else {
+        legacy
+    };
     if !path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -115,12 +226,24 @@ fn load_drawings(folder: String, presentation_file: String) -> Result<Value, Str
 }
 
 #[tauri::command]
-fn load_outputs(folder: String, presentation_file: String) -> Result<Value, String> {
+fn load_outputs(
+    folder: String,
+    settings_folder: String,
+    presentation_file: String,
+) -> Result<Value, String> {
     let root = ensure_folder(&folder)?;
+    let settings = settings_path(&settings_folder)?;
     let name = validate_presentation_file(&presentation_file)?;
-    let current = presentation_state_folder(&root, name).join("outputs");
+    let current = presentation_state_folder(&settings, name).join("outputs");
+    let project_local = presentation_state_folder(&root.join(APP_DIRECTORY), name).join("outputs");
     let legacy = root.join("outputs");
-    let directory = if current.is_dir() || name != "presentation.md" { current } else { legacy };
+    let directory = if current.is_dir() {
+        current
+    } else if project_local.is_dir() {
+        project_local
+    } else {
+        legacy
+    };
     if !directory.is_dir() {
         return Ok(Value::Object(Map::new()));
     }
@@ -150,33 +273,40 @@ fn load_outputs(folder: String, presentation_file: String) -> Result<Value, Stri
 }
 
 #[tauri::command]
-fn create_presentation(folder: String, presentation_file: String, markdown: String) -> Result<(), String> {
+fn create_presentation(
+    folder: String,
+    settings_folder: String,
+    presentation_file: String,
+    markdown: String,
+) -> Result<(), String> {
     let root = ensure_folder(&folder)?;
+    let settings = settings_path(&settings_folder)?;
     let name = validate_presentation_file(&presentation_file)?;
     let presentation = root.join(name);
     if presentation.exists() {
         return Err(format!("This project already contains {name}"));
     }
-    fs::write(presentation, markdown)
-        .map_err(|e| format!("Could not create {name}: {e}"))?;
+    fs::write(presentation, markdown).map_err(|e| format!("Could not create {name}: {e}"))?;
     fs::create_dir_all(root.join("assets")).map_err(|e| e.to_string())?;
-    ensure_app_layout(&root)?;
+    ensure_app_layout(&settings, &root)?;
     Ok(())
 }
 
 #[tauri::command]
 fn save_presentation(
     folder: String,
+    settings_folder: String,
     presentation_file: String,
     markdown: String,
     drawings: Value,
     outputs: Value,
 ) -> Result<(), String> {
     let root = ensure_folder(&folder)?;
+    let settings = settings_path(&settings_folder)?;
     let name = validate_presentation_file(&presentation_file)?;
     fs::write(root.join(name), markdown).map_err(|e| e.to_string())?;
-    ensure_app_layout(&root)?;
-    let app = presentation_state_folder(&root, name);
+    ensure_app_layout(&settings, &root)?;
+    let app = presentation_state_folder(&settings, name);
     fs::create_dir_all(&app).map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(&drawings).map_err(|e| e.to_string())?;
     fs::write(app.join("drawings.json"), json).map_err(|e| e.to_string())?;
@@ -201,12 +331,14 @@ fn save_presentation(
 #[tauri::command]
 fn save_session(
     folder: String,
+    settings_folder: String,
     presentation_file: Option<String>,
     session: Value,
     audio_bytes: Option<Vec<u8>>,
     video_bytes: Option<Vec<u8>>,
 ) -> Result<Option<String>, String> {
     let root = ensure_folder(&folder)?;
+    let settings = settings_path(&settings_folder)?;
     if let Some(name) = presentation_file.as_deref() {
         validate_presentation_file(name)?;
     }
@@ -217,7 +349,7 @@ fn save_session(
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return Err("Invalid session id".into());
     }
-    let app = ensure_app_layout(&root)?;
+    let app = ensure_app_layout(&settings, &root)?;
     let session_dir = app.join("sessions").join(id);
     let outputs_dir = session_dir.join("outputs");
     fs::create_dir_all(&outputs_dir).map_err(|e| e.to_string())?;
@@ -264,18 +396,29 @@ fn save_session(
 }
 
 fn run_ffmpeg(input: &Path, output: &Path) -> Result<(), String> {
-    for program in ["ffmpeg", "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+    for program in [
+        "ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ] {
         let result = Command::new(program)
             .args(["-y", "-i"])
             .arg(input)
             .args([
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "18",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
             ])
             .arg(output)
             .status();
@@ -302,12 +445,20 @@ fn write_binary(path: String, bytes: Vec<u8>) -> Result<(), String> {
 fn copy_video(source: String, target: String) -> Result<(), String> {
     let source = PathBuf::from(source);
     let target = PathBuf::from(target);
-    let is_mp4 = |path: &Path| path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("mp4"));
+    let is_mp4 = |path: &Path| {
+        path.extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("mp4"))
+    };
     if !source.is_file() || !is_mp4(&source) || !is_mp4(&target) {
         return Err("Expected an existing MP4 recording and an MP4 destination".into());
     }
-    if source == target { return Ok(()); }
-    fs::copy(source, target).map(|_| ()).map_err(|e| format!("Could not export the video: {e}"))
+    if source == target {
+        return Ok(());
+    }
+    fs::copy(source, target)
+        .map(|_| ())
+        .map_err(|e| format!("Could not export the video: {e}"))
 }
 
 #[tauri::command]
@@ -328,19 +479,28 @@ fn open_microphone_settings() -> Result<(), String> {
     {
         let mut command = Command::new("open");
         command.arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
-        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+        return command
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Could not open microphone settings: {error}"));
     }
     #[cfg(target_os = "windows")]
     {
         let mut command = Command::new("cmd");
         command.args(["/C", "start", "", "ms-settings:privacy-microphone"]);
-        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+        return command
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Could not open microphone settings: {error}"));
     }
     #[cfg(target_os = "linux")]
     {
         let mut command = Command::new("gnome-control-center");
         command.arg("privacy");
-        return command.spawn().map(|_| ()).map_err(|error| format!("Could not open microphone settings: {error}"));
+        return command
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Could not open microphone settings: {error}"));
     }
     #[allow(unreachable_code)]
     Err("Microphone settings are not available on this platform".into())
@@ -352,6 +512,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_presentations,
+            settings_home_folder,
+            settings_cache_folder,
+            resolve_settings_folder,
             load_presentation,
             load_drawings,
             load_outputs,

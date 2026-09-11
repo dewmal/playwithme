@@ -35,7 +35,7 @@ Open a project folder containing one or more Markdown presentation files. Decks 
 | F | Presentation mode |
 | Esc | Return to select mode |
 
-Presentation folders stay deliberately small:
+By default, Presenta keeps generated project state outside the project under `~/.presenta/projects/<project-id>/`. In **Projects → Settings**, you can instead use the operating system's application cache, keep state inside the project, or choose another base folder. The inside-project layout is:
 
 ```text
 my-presentation-project/
@@ -56,9 +56,9 @@ my-presentation-project/
     └── exports/
 ```
 
-Editable presentations and their required assets live in the project tree. Presenta-owned settings, drawings, cached Python outputs, recordings, and internal video exports stay under `.presenta/`. The default root-level `presentation.md` keeps its state directly under `.presenta/`; additional decks keep separate state under `.presenta/presentations/<relative-path>/`. Existing projects with the older top-level `drawings/` and `outputs/` layout remain readable and are saved in the new layout the next time they change.
+Editable presentations and their required assets always live in the project tree. Presenta-owned settings, drawings, cached Python outputs, recordings, and internal video exports use the selected settings location. The default root-level `presentation.md` keeps its state directly in that location; additional decks keep separate state under `presentations/<relative-path>/`. Existing project-local `.presenta`, `drawings/`, and `outputs/` data remains readable. Each recent project remembers its resolved settings folder, so changing the preference affects newly opened or created projects rather than silently moving existing data.
 
-Sessions are stored under `.presenta/sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. Recording setup includes camera and microphone previews with device selection, plus camera position and size controls. When enabled, the mirrored camera preview appears over the presentation, can be dragged while recording, and is composited at the same location in the exported recording; it can also be toggled during a session. Recording opens a presenter view with the current speaker notes, recording timer, and next-slide preview; this private panel is never included in the captured video. A session can be paused and resumed without adding the paused interval to its audio, video, event timeline, or duration. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `.presenta/exports/`.
+Sessions are stored under `<settings-location>/sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. Recording setup includes camera and microphone previews with device selection, plus camera position and size controls. When enabled, the mirrored camera preview appears over the presentation, can be dragged while recording, and is composited at the same location in the exported recording; it can also be toggled during a session. Recording opens a presenter view with the current speaker notes, recording timer, and next-slide preview; this private panel is never included in the captured video. A session can be paused and resumed without adding the paused interval to its audio, video, event timeline, or duration. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `<settings-location>/exports/`.
 
 ### macOS debug permissions
 

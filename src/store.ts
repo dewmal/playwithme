@@ -14,11 +14,11 @@ function initialTheme(): Theme {
 }
 
 interface AppState {
-  folder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
+  folder: string | null; settingsFolder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
   mode: Mode; theme: Theme; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
-  setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
+  setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; loadDeck: (folder: string | null, settingsFolder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setTheme: (theme: Theme) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
@@ -31,7 +31,7 @@ function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): T
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  folder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
+  folder: null, settingsFolder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
   mode: "edit", theme: initialTheme(), sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
   drawings: [], redoStack: [], outputs: {}, recording: false, recordingPaused: false, recordStarted: null, recordPausedAt: null, events: [],
   setMarkdown: (markdown) => set((state) => {
@@ -42,7 +42,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const markdown = updateSlideBackground(state.markdown, state.slideIndex, color);
     return { markdown, slides: parseSlides(markdown) };
   }),
-  loadDeck: (folder, presentationFile, presentationFiles, markdown) => set({ folder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
+  loadDeck: (folder, settingsFolder, presentationFile, presentationFiles, markdown) => set({ folder, settingsFolder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
   addSlide: () => {
     const current = get();
     const content = "# Untitled slide\n\nStart writing your presentation.";
