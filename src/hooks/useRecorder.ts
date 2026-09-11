@@ -257,6 +257,12 @@ export function useRecorder() {
             if (!clonedSlide) return;
             clonedSlide.style.setProperty("box-shadow", "none", "important");
             clonedSlide.style.setProperty("background", "#f4f0e8", "important");
+            clonedSlide.querySelectorAll<HTMLElement>(".cm-activeLine, .cm-activeLineGutter").forEach((element) => {
+              element.style.setProperty("background", "transparent", "important");
+            });
+            clonedSlide.querySelectorAll<HTMLElement>(".cm-cursor, .cm-dropCursor, .cm-selectionLayer").forEach((element) => {
+              element.style.setProperty("display", "none", "important");
+            });
             documentClone.querySelector<HTMLElement>(".camera-preview")?.style.setProperty("display", "none", "important");
           },
         });
