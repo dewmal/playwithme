@@ -78,6 +78,48 @@ Create a numbered list with numbers:
 
 Keep lists short so they remain easy to read during the presentation.
 
+## Arrange content in columns
+
+Wrap a group with `<!-- columns -->` and `<!-- /columns -->`. Add `<!-- column -->` between each column. Each column supports the same Markdown as the rest of the slide, including images, lists, code, and reveal steps.
+
+```md
+# Two approaches
+
+<!-- columns -->
+
+## Manual
+
+- Easy to start
+- Repetitive at scale
+
+<!-- column -->
+
+## Automated
+
+- More setup
+- Faster to repeat
+
+<!-- /columns -->
+```
+
+You can add more `<!-- column -->` markers for three or more columns. Keep the content brief so every column remains readable.
+
+Add proportional sizes after `columns` when the columns should have different widths:
+
+```md
+<!-- columns: 35 65 -->
+
+Narrow left column
+
+<!-- column -->
+
+Wide right column
+
+<!-- /columns -->
+```
+
+The numbers are relative weights. For example, `35 65`, `1 2`, and `35% 65%` are all valid. Provide one number for each column. If the sizes are missing or do not match the number of columns, Presenta uses equal widths.
+
 ## Reveal content step by step
 
 Add `<!-- step -->` before content that should appear on the next presentation step.

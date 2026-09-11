@@ -85,6 +85,30 @@ Output layer
 
 Each step appears when the presenter moves forward.
 
+### Column layouts
+
+Slides can arrange Markdown into two or more equal-width columns.
+
+```md
+# Comparison
+
+<!-- columns -->
+
+## Option A
+
+First column content.
+
+<!-- column -->
+
+## Option B
+
+Second column content.
+
+<!-- /columns -->
+```
+
+Use `<!-- columns: 35 65 -->` to set proportional widths. Plain `<!-- columns -->` keeps every column equal.
+
 ---
 
 ## 2. Executable Python Code Cells

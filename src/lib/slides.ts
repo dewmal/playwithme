@@ -129,6 +129,74 @@ export function visibleMarkdown(slide: Slide, step: number) {
   return slide.steps.slice(0, step + 1).join("\n\n");
 }
 
+export type SlideContentBlock =
+  | { type: "markdown"; markdown: string }
+  | { type: "columns"; columns: string[]; sizes?: number[] };
+
+const columnsStart = /^\s*<!--\s*columns(?:\s*:\s*(.*?))?\s*-->\s*$/i;
+const columnBreak = /^\s*<!--\s*column\s*-->\s*$/i;
+const columnsEnd = /^\s*<!--\s*\/columns\s*-->\s*$/i;
+
+function parseColumnSizes(value?: string) {
+  if (!value?.trim()) return undefined;
+  const sizes = value.split(/[\s,]+/).filter(Boolean).map((part) => Number(part.replace(/%$/, "")));
+  return sizes.length && sizes.every((size) => Number.isFinite(size) && size > 0) ? sizes : undefined;
+}
+
+/**
+ * Splits a slide into ordinary Markdown and explicitly marked column groups.
+ * Markers inside fenced code blocks are left untouched. An unfinished column
+ * group is still rendered as columns, which keeps reveal steps useful while a
+ * later step contains the closing marker.
+ */
+export function slideContentBlocks(markdown: string): SlideContentBlock[] {
+  const blocks: SlideContentBlock[] = [];
+  const normal: string[] = [];
+  let columns: string[][] | null = null;
+  let columnSizes: number[] | undefined;
+  let fence: { marker: string; length: number } | null = null;
+
+  const pushMarkdown = () => {
+    const value = normal.join("\n").trim();
+    if (value) blocks.push({ type: "markdown", markdown: value });
+    normal.length = 0;
+  };
+  const pushColumns = () => {
+    if (!columns) return;
+    const values = columns.map((column) => column.join("\n").trim());
+    const sizes = columnSizes?.length === values.length ? columnSizes : undefined;
+    if (values.some(Boolean)) blocks.push({ type: "columns", columns: values, ...(sizes ? { sizes } : {}) });
+    columns = null;
+    columnSizes = undefined;
+  };
+
+  for (const line of markdown.split("\n")) {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      if (!fence) fence = { marker, length: fenceMatch[1].length };
+      else if (fence.marker === marker && fenceMatch[1].length >= fence.length && !fenceMatch[2].trim()) fence = null;
+    }
+
+    const startMatch = !fence && !columns ? line.match(columnsStart) : null;
+    if (startMatch) {
+      pushMarkdown();
+      columns = [[]];
+      columnSizes = parseColumnSizes(startMatch[1]);
+    } else if (!fence && columns && columnBreak.test(line)) {
+      columns.push([]);
+    } else if (!fence && columns && columnsEnd.test(line)) {
+      pushColumns();
+    } else {
+      (columns ? columns[columns.length - 1] : normal).push(line);
+    }
+  }
+
+  pushColumns();
+  pushMarkdown();
+  return blocks;
+}
+
 export function slideTitle(slide: Slide) {
   return slide.raw.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled slide";
 }

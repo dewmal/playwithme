@@ -1,14 +1,10 @@
 import { isValidElement, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Paintbrush } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeHighlight from "rehype-highlight";
 import { useAppStore } from "../store";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
+import { SlideMarkdown } from "./SlideMarkdown";
 import type { CameraLayout } from "../types";
 
 function textFromNode(node: ReactNode): string {
@@ -96,7 +92,7 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   return <div className="stage-shell">
     <article className={`slide-canvas ${backgroundTone(slide?.background)} code-theme-${resolvedCodeTheme}`} style={slideThemeStyle(slide)} data-slide-index={slideIndex} onContextMenu={openMenu}>
       <div className="slide-accent" />
-      <div className="slide-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{markdown}</ReactMarkdown></div>
+      <div className="slide-content"><SlideMarkdown markdown={markdown} components={components} /></div>
       <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>
       <DrawingLayer />
       {!exportMode && showCamera && cameraStream && cameraLayout && moveCamera && <CameraPreview stream={cameraStream} layout={cameraLayout} move={moveCamera} />}
