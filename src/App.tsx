@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, PanelRight, Pause, Play, Save, Sparkles, VideoOff } from "lucide-react";
+import { Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, Moon, PanelRight, Pause, Play, Save, Sparkles, Sun, VideoOff } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { DrawingToolbar } from "./components/DrawingToolbar";
@@ -66,13 +66,14 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [store.folder, store.presentationFile, store.markdown, store.drawings, store.outputs]);
 
-  return <div className={`app mode-${store.mode}${presenterView ? " presenter-view" : ""}`}>
+  return <div className={`app theme-${store.theme} mode-${store.mode}${presenterView ? " presenter-view" : ""}`}>
     {store.sidebarOpen && store.mode === "edit" && !presenterView && <Sidebar choosePresentation={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })} />}
     <main className="workspace">
       <header className="topbar">
         <div className="top-left">{!store.sidebarOpen && <button onClick={() => store.setSidebar(true)} title="Show slides"><Menu /></button>}<button className="deck-name" onClick={() => store.folder && store.presentationFiles.length > 1 && setPicker({ folder: store.folder, presentations: store.presentationFiles })}>{store.presentationFile?.split(/[\\/]/).at(-1)?.replace(/\.md$/i, "") ?? "Untitled presentation"}{store.presentationFiles.length > 1 && <ChevronDown />}</button><span className="save-state"><i /> Saved</span></div>
         <div className="top-actions">
           <button onClick={newDeck}><FilePlus2 /> New</button><button onClick={openDeck}><FolderOpen /> Open</button><button onClick={saveDeck}><Save /> Save</button><button onClick={() => setSource(!source)} className={source ? "active" : ""}><Code2 /> Source</button>
+          <button onClick={() => store.setTheme(store.theme === "light" ? "dark" : "light")} title={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`} aria-label={`Switch to ${store.theme === "light" ? "dark" : "light"} theme`}>{store.theme === "light" ? <Moon /> : <Sun />} Theme</button>
           <button onClick={() => setHelpOpen(true)}><CircleHelp /> Help</button><button onClick={() => setExportOpen(true)}><Download /> Export</button>
           <button className="present-button" onClick={togglePresent}><Play /> Present <ChevronDown /></button>
         </div>

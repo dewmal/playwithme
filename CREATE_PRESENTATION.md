@@ -2,6 +2,10 @@
 
 Create your presentation by writing Markdown in `presentation.md`.
 
+## Change the presentation theme
+
+Select **Theme** in the top toolbar to switch the entire presentation between light and dark mode. The selected theme is used in the editor, fullscreen presentation, thumbnails, and PDF exports. Presenta remembers your choice for the next session; when no choice has been saved, it follows your system appearance.
+
 ## Create slides
 
 Start each slide with a heading. Separate slides with `---` on its own line.

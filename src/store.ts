@@ -4,14 +4,23 @@ import { parseSlides } from "./lib/slides";
 import { SAMPLE_MARKDOWN } from "./lib/sample";
 
 type Mode = "edit" | "present";
+export type Theme = "light" | "dark";
+
+function initialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const saved = window.localStorage.getItem("presenta-theme");
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 interface AppState {
   folder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
-  mode: Mode; sidebarOpen: boolean; tool: Tool; color: string; width: number;
+  mode: Mode; theme: Theme; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
   setMarkdown: (value: string) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
-  setMode: (mode: Mode) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
+  setMode: (mode: Mode) => void; setTheme: (theme: Theme) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
   addDrawing: (drawing: Drawing) => void; undo: () => void; redo: () => void; clearSlide: () => void;
   setOutput: (output: CellOutput) => void; startRecording: () => void; pauseRecording: () => void; resumeRecording: () => void; stopRecording: () => void; addEvent: (event: Omit<TimelineEvent, "time">) => void;
@@ -23,7 +32,7 @@ function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): T
 
 export const useAppStore = create<AppState>((set, get) => ({
   folder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
-  mode: "edit", sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
+  mode: "edit", theme: initialTheme(), sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
   drawings: [], redoStack: [], outputs: {}, recording: false, recordingPaused: false, recordStarted: null, recordPausedAt: null, events: [],
   setMarkdown: (markdown) => set((state) => {
     const slides = parseSlides(markdown);
@@ -55,7 +64,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     else if (s.slideIndex > 0) { const i = s.slideIndex - 1; set({ slideIndex: i, step: s.slides[i].steps.length - 1 }); }
     get().addEvent({ type: "navigate-back", slide: get().slideIndex, step: get().step });
   },
-  setMode: (mode) => set({ mode }), setSidebar: (sidebarOpen) => set({ sidebarOpen }), setTool: (tool) => set({ tool }),
+  setMode: (mode) => set({ mode }),
+  setTheme: (theme) => { window.localStorage.setItem("presenta-theme", theme); set({ theme }); },
+  setSidebar: (sidebarOpen) => set({ sidebarOpen }), setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color }), setWidth: (width) => set({ width }),
   addDrawing: (drawing) => { set((s) => ({ drawings: [...s.drawings, drawing], redoStack: [] })); get().addEvent({ type: "drawing", slide: get().slideIndex, data: drawing }); },
   undo: () => set((s) => { const mine = [...s.drawings]; const last = mine.pop(); return last ? { drawings: mine, redoStack: [...s.redoStack, last] } : s; }),

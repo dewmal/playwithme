@@ -19,7 +19,7 @@ export async function exportPdf(stepByStep: boolean) {
         useAppStore.setState({ slideIndex, step }); await settle();
         const element = document.querySelector<HTMLElement>(".slide-canvas");
         if (!element) continue;
-        const canvas = await html2canvas(element, { scale: 1.5, backgroundColor: "#f3efe7", useCORS: true });
+        const canvas = await html2canvas(element, { scale: 1.5, backgroundColor: original.theme === "dark" ? "#17181d" : "#f4f0e8", useCORS: true });
         if (!first) pdf.addPage([1600, 900], "landscape"); first = false;
         pdf.addImage(canvas.toDataURL("image/jpeg", .94), "JPEG", 0, 0, 1600, 900);
       }
