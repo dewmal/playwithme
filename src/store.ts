@@ -5,11 +5,11 @@ import { SAMPLE_MARKDOWN } from "./lib/sample";
 
 type Mode = "edit" | "present";
 interface AppState {
-  folder: string | null; markdown: string; slides: Slide[]; slideIndex: number; step: number;
+  folder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
   mode: Mode; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>;
   recording: boolean; recordStarted: number | null; events: TimelineEvent[];
-  setMarkdown: (value: string) => void; loadDeck: (folder: string | null, markdown: string) => void;
+  setMarkdown: (value: string) => void; loadDeck: (folder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
   setMode: (mode: Mode) => void; setSidebar: (open: boolean) => void; setTool: (tool: Tool) => void;
   setColor: (color: string) => void; setWidth: (width: number) => void;
@@ -22,14 +22,14 @@ function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): T
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  folder: null, markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
+  folder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
   mode: "edit", sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
   drawings: [], redoStack: [], outputs: {}, recording: false, recordStarted: null, events: [],
   setMarkdown: (markdown) => set((state) => {
     const slides = parseSlides(markdown);
     return { markdown, slides, slideIndex: Math.min(state.slideIndex, Math.max(0, slides.length - 1)), step: 0 };
   }),
-  loadDeck: (folder, markdown) => set({ folder, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
+  loadDeck: (folder, presentationFile, presentationFiles, markdown) => set({ folder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {} }),
   goTo: (slideIndex, step = 0) => {
     set({ slideIndex, step }); get().addEvent({ type: "slide", slide: slideIndex });
   },

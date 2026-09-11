@@ -1,7 +1,7 @@
 use serde_json::{json, Map, Value};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
@@ -40,19 +40,73 @@ fn ensure_folder(folder: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[tauri::command]
-fn load_presentation(folder: String) -> Result<String, String> {
-    let root = ensure_folder(&folder)?;
-    fs::read_to_string(root.join("presentation.md"))
-        .map_err(|e| format!("Could not read presentation.md: {e}"))
+fn validate_presentation_file(presentation_file: &str) -> Result<&str, String> {
+    let path = Path::new(presentation_file);
+    let is_safe_relative_path = !path.is_absolute()
+        && path.components().all(|component| matches!(component, Component::Normal(_)));
+    let is_markdown = path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("md"));
+    if presentation_file.is_empty() || !is_safe_relative_path || !is_markdown {
+        return Err("Presentation files must be safe Markdown paths inside the project folder".into());
+    }
+    Ok(presentation_file)
+}
+
+fn presentation_state_folder(root: &Path, presentation_file: &str) -> PathBuf {
+    if presentation_file == "presentation.md" {
+        app_folder(root)
+    } else {
+        app_folder(root).join("presentations").join(presentation_file)
+    }
+}
+
+fn collect_presentations(root: &Path, directory: &Path, presentations: &mut Vec<String>) -> Result<(), String> {
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if file_type.is_dir() {
+            if !name.starts_with('.') && name != "node_modules" {
+                collect_presentations(root, &entry.path(), presentations)?;
+            }
+            continue;
+        }
+        let path = entry.path();
+        let is_markdown = path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("md"));
+        if !file_type.is_file() || !is_markdown {
+            continue;
+        }
+        let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
+        let relative = relative.components().map(|component| component.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        presentations.push(relative);
+    }
+    Ok(())
 }
 
 #[tauri::command]
-fn load_drawings(folder: String) -> Result<Value, String> {
+fn list_presentations(folder: String) -> Result<Vec<String>, String> {
     let root = ensure_folder(&folder)?;
-    let current = app_folder(&root).join("drawings.json");
+    let mut presentations = Vec::new();
+    collect_presentations(&root, &root, &mut presentations)?;
+    presentations.sort_by_key(|name| (name != "presentation.md", name.to_lowercase()));
+    Ok(presentations)
+}
+
+#[tauri::command]
+fn load_presentation(folder: String, presentation_file: String) -> Result<String, String> {
+    let root = ensure_folder(&folder)?;
+    let name = validate_presentation_file(&presentation_file)?;
+    fs::read_to_string(root.join(name))
+        .map_err(|e| format!("Could not read {name}: {e}"))
+}
+
+#[tauri::command]
+fn load_drawings(folder: String, presentation_file: String) -> Result<Value, String> {
+    let root = ensure_folder(&folder)?;
+    let name = validate_presentation_file(&presentation_file)?;
+    let current = presentation_state_folder(&root, name).join("drawings.json");
     let legacy = root.join("drawings").join("drawings.json");
-    let path = if current.exists() { current } else { legacy };
+    let path = if current.exists() || name != "presentation.md" { current } else { legacy };
     if !path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -61,11 +115,12 @@ fn load_drawings(folder: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn load_outputs(folder: String) -> Result<Value, String> {
+fn load_outputs(folder: String, presentation_file: String) -> Result<Value, String> {
     let root = ensure_folder(&folder)?;
-    let current = app_folder(&root).join("outputs");
+    let name = validate_presentation_file(&presentation_file)?;
+    let current = presentation_state_folder(&root, name).join("outputs");
     let legacy = root.join("outputs");
-    let directory = if current.is_dir() { current } else { legacy };
+    let directory = if current.is_dir() || name != "presentation.md" { current } else { legacy };
     if !directory.is_dir() {
         return Ok(Value::Object(Map::new()));
     }
@@ -95,14 +150,15 @@ fn load_outputs(folder: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn create_presentation(folder: String, markdown: String) -> Result<(), String> {
+fn create_presentation(folder: String, presentation_file: String, markdown: String) -> Result<(), String> {
     let root = ensure_folder(&folder)?;
-    let presentation = root.join("presentation.md");
+    let name = validate_presentation_file(&presentation_file)?;
+    let presentation = root.join(name);
     if presentation.exists() {
-        return Err("This folder already contains a presentation.md file".into());
+        return Err(format!("This project already contains {name}"));
     }
     fs::write(presentation, markdown)
-        .map_err(|e| format!("Could not create presentation.md: {e}"))?;
+        .map_err(|e| format!("Could not create {name}: {e}"))?;
     fs::create_dir_all(root.join("assets")).map_err(|e| e.to_string())?;
     ensure_app_layout(&root)?;
     Ok(())
@@ -111,13 +167,17 @@ fn create_presentation(folder: String, markdown: String) -> Result<(), String> {
 #[tauri::command]
 fn save_presentation(
     folder: String,
+    presentation_file: String,
     markdown: String,
     drawings: Value,
     outputs: Value,
 ) -> Result<(), String> {
     let root = ensure_folder(&folder)?;
-    fs::write(root.join("presentation.md"), markdown).map_err(|e| e.to_string())?;
-    let app = ensure_app_layout(&root)?;
+    let name = validate_presentation_file(&presentation_file)?;
+    fs::write(root.join(name), markdown).map_err(|e| e.to_string())?;
+    ensure_app_layout(&root)?;
+    let app = presentation_state_folder(&root, name);
+    fs::create_dir_all(&app).map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(&drawings).map_err(|e| e.to_string())?;
     fs::write(app.join("drawings.json"), json).map_err(|e| e.to_string())?;
     let outputs_dir = app.join("outputs");
@@ -141,11 +201,15 @@ fn save_presentation(
 #[tauri::command]
 fn save_session(
     folder: String,
+    presentation_file: Option<String>,
     session: Value,
     audio_bytes: Option<Vec<u8>>,
     video_bytes: Option<Vec<u8>>,
 ) -> Result<Option<String>, String> {
     let root = ensure_folder(&folder)?;
+    if let Some(name) = presentation_file.as_deref() {
+        validate_presentation_file(name)?;
+    }
     let id = session
         .get("id")
         .and_then(Value::as_str)
@@ -263,6 +327,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            list_presentations,
             load_presentation,
             load_drawings,
             load_outputs,

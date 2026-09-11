@@ -1,9 +1,9 @@
-import { FileText, PanelLeftClose, Plus, Search } from "lucide-react";
+import { ChevronDown, FileText, PanelLeftClose, Plus, Search } from "lucide-react";
 import { slideTitle } from "../lib/slides";
 import { useAppStore } from "../store";
 
-export function Sidebar() {
-  const { slides, slideIndex, goTo, setSidebar } = useAppStore();
+export function Sidebar({ choosePresentation }: { choosePresentation: () => void }) {
+  const { slides, slideIndex, goTo, setSidebar, presentationFile, presentationFiles } = useAppStore();
   return <aside className="sidebar">
     <div className="sidebar-head"><div className="brand-mark">P</div><div><b>Presenta</b><span>Presentation studio</span></div><button onClick={() => setSidebar(false)} title="Hide sidebar"><PanelLeftClose /></button></div>
     <div className="search"><Search /><input aria-label="Search slides" placeholder="Search slides" /></div>
@@ -14,6 +14,6 @@ export function Sidebar() {
         <span className="thumb-canvas"><i /><strong>{slideTitle(slide)}</strong><small>{slide.steps.length > 1 ? `${slide.steps.length} reveal steps` : "Static slide"}</small></span>
       </button>)}
     </div>
-    <div className="sidebar-foot"><FileText /><span><b>presentation.md</b><small>{slides.length} slides · autosaved</small></span></div>
+    <button className="sidebar-foot" onClick={choosePresentation} disabled={presentationFiles.length < 2} title={presentationFiles.length > 1 ? "Switch presentation" : undefined}><FileText /><span><b>{presentationFile ?? "Unsaved presentation"}</b><small>{slides.length} slides · autosaved</small></span>{presentationFiles.length > 1 && <ChevronDown className="switch-icon" />}</button>
   </aside>;
 }
