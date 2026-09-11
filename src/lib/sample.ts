@@ -1,3 +1,14 @@
+export const NEW_PRESENTATION_MARKDOWN = `# Untitled Presentation
+
+Add your subtitle here.
+
+---
+
+# Next slide
+
+Start writing your presentation.
+`;
+
 export const SAMPLE_MARKDOWN = `# Presenta
 
 ## Ideas, executed live.

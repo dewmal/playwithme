@@ -34,3 +34,7 @@ Open a folder containing `presentation.md`. Use `---` between slides, `<!-- step
 | Esc | Return to select mode |
 
 Sessions are stored under `sessions/<timestamp>/` with separate timeline, narration, frozen outputs, drawings, and an optional visual capture. PDF export supports final-state and step-by-step modes. When FFmpeg is available, a recorded visual session is automatically transcoded to H.264/AAC MP4 under `exports/`.
+
+### macOS debug permissions
+
+Use `npm run debug:macos` when testing recording. It builds and launches a debug app bundle with a stable signing identifier so macOS can retain microphone permission between rebuilds. Video is rendered directly from the presentation area and does not require Screen & System Audio Recording permission.
