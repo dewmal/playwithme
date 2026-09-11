@@ -11,6 +11,8 @@ const styleKeys: Record<string, keyof SlideStyle> = {
   "title-color": "titleColor",
   "body-color": "bodyColor",
   "accent-color": "accentColor",
+  "code-theme": "codeTheme",
+  "code-width": "codeWidth",
 };
 
 function parseStyle(value?: string): SlideStyle {
@@ -20,7 +22,13 @@ function parseStyle(value?: string): SlideStyle {
     if (splitAt < 0) return style;
     const key = styleKeys[entry.slice(0, splitAt).trim().toLowerCase()];
     const setting = entry.slice(splitAt + 1).trim();
-    if (key && setting) style[key] = setting;
+    if (key === "codeTheme") {
+      if (setting === "auto" || setting === "dark" || setting === "light") style.codeTheme = setting;
+    } else if (key === "codeWidth") {
+      if (setting === "100" || setting === "75" || setting === "50") style.codeWidth = setting;
+    } else if (key && setting) {
+      (style as Record<string, string | undefined>)[key] = setting;
+    }
     return style;
   }, {});
 }
@@ -107,7 +115,14 @@ export function slideThemeStyle(slide?: Slide) {
     ...(slide.style.titleColor ? { "--slide-title-color": slide.style.titleColor } : {}),
     ...(slide.style.bodyColor ? { "--slide-body-color": slide.style.bodyColor } : {}),
     ...(slide.style.accentColor ? { "--slide-accent": slide.style.accentColor } : {}),
+    ...(slide.style.codeWidth ? { "--slide-code-width": `${slide.style.codeWidth}%` } : {}),
   } as CSSProperties;
+}
+
+export function codeTheme(slide: Slide | undefined, appTheme: "light" | "dark") {
+  if (slide?.style.codeTheme === "light" || slide?.style.codeTheme === "dark") return slide.style.codeTheme;
+  if (slide?.background) return backgroundTone(slide.background) === "custom-dark" ? "dark" : "light";
+  return appTheme;
 }
 
 export function visibleMarkdown(slide: Slide, step: number) {

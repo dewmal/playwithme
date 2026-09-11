@@ -190,6 +190,12 @@ print(average)
 ```
 ````
 
+Use **Slide theme** in the top toolbar to choose a light or dark code theme and set code blocks to full, 75%, or 50% width. These settings apply to the current slide and can be copied to all slides. They are also stored in Markdown as part of the slide style:
+
+```md
+<!-- slide-style: code-theme=light; code-width=75 -->
+```
+
 ## Example presentation
 
 ````md

@@ -5,9 +5,9 @@ import { Check, LoaderCircle, Play, TriangleAlert } from "lucide-react";
 import { pythonKernel } from "../lib/python";
 import { useAppStore } from "../store";
 
-interface Props { id: string; initialCode: string }
+interface Props { id: string; initialCode: string; theme: "light" | "dark" }
 
-export function CodeCell({ id, initialCode }: Props) {
+export function CodeCell({ id, initialCode, theme }: Props) {
   const [code, setCode] = useState(initialCode.trim());
   const [running, setRunning] = useState(false);
   const output = useAppStore((s) => s.outputs[id]);
@@ -22,11 +22,11 @@ export function CodeCell({ id, initialCode }: Props) {
     finally { setRunning(false); }
   };
 
-  return <div className="code-cell" data-cell-id={id}>
+  return <div className={`code-cell code-theme-${theme}`} data-cell-id={id}>
     <div className="cell-bar"><span><i /> Python</span><button onClick={run} disabled={running} title="Run cell (R)">
       {running ? <LoaderCircle className="spin" /> : <Play />} {running ? "Running…" : "Run"}
     </button></div>
-    <CodeMirror value={code} onChange={setCode} extensions={[python()]} theme="dark" basicSetup={{ lineNumbers: true, foldGutter: false }} />
+    <CodeMirror value={code} onChange={setCode} extensions={[python()]} theme={theme} basicSetup={{ lineNumbers: true, foldGutter: false }} />
     {output && <div className={`cell-output ${output.kind}`}>
       <div className="output-label">{output.kind === "error" ? <TriangleAlert /> : <Check />} {output.kind === "error" ? "Error" : "Output"}</div>
       {output.kind === "html" ? <div className="rich-output" dangerouslySetInnerHTML={{ __html: output.data }} /> :

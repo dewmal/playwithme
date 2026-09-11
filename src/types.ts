@@ -6,6 +6,8 @@ export interface SlideStyle {
   titleColor?: string;
   bodyColor?: string;
   accentColor?: string;
+  codeTheme?: "auto" | "dark" | "light";
+  codeWidth?: "100" | "75" | "50";
 }
 
 export interface Slide { id: string; raw: string; steps: string[]; notes?: string; background?: string; style: SlideStyle }

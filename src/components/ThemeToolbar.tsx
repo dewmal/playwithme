@@ -33,7 +33,7 @@ export function ThemeToolbar({ notify }: { notify: (message: string) => void }) 
     notify("Slide theme applied to all slides");
   };
   const reset = () => {
-    store.setSlideStyle({ titleFont: undefined, bodyFont: undefined, titleColor: undefined, bodyColor: undefined, accentColor: undefined });
+    store.setSlideStyle({ titleFont: undefined, bodyFont: undefined, titleColor: undefined, bodyColor: undefined, accentColor: undefined, codeTheme: undefined, codeWidth: undefined });
     store.setSlideBackground(null);
     notify("Current slide theme reset");
   };
@@ -51,6 +51,10 @@ export function ThemeToolbar({ notify }: { notify: (message: string) => void }) 
         <ColorSetting label="Title" value={style.titleColor ?? (darkSlide ? "#f5f3ed" : "#191a1f")} change={(titleColor) => store.setSlideStyle({ titleColor })} />
         <ColorSetting label="Body text" value={style.bodyColor ?? (darkSlide ? "#b8bac2" : "#505158")} change={(bodyColor) => store.setSlideStyle({ bodyColor })} />
         <ColorSetting label="Accent" value={style.accentColor ?? "#ff4d67"} change={(accentColor) => store.setSlideStyle({ accentColor })} />
+      </div>
+      <div className="theme-code-grid">
+        <label><span>Code theme</span><select value={style.codeTheme ?? "auto"} onChange={(event) => store.setSlideStyle({ codeTheme: event.target.value as "auto" | "dark" | "light" })}><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+        <label><span>Code width</span><select value={style.codeWidth ?? "100"} onChange={(event) => store.setSlideStyle({ codeWidth: event.target.value as "100" | "75" | "50" })}><option value="100">Full width</option><option value="75">75% width</option><option value="50">50% width</option></select></label>
       </div>
       <footer><button className="theme-reset" onClick={reset}><RotateCcw /> Reset slide</button><button className="theme-apply" onClick={applyAll}><Check /> Apply to all slides</button></footer>
     </section>}

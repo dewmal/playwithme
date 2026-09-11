@@ -6,7 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { useAppStore } from "../store";
-import { backgroundTone, slideThemeStyle, visibleMarkdown } from "../lib/slides";
+import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
 import type { CameraLayout } from "../types";
@@ -53,21 +53,25 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {
-  const { slides, slideIndex, step, mode, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
+  const { slides, slideIndex, step, mode, theme, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
+  const resolvedCodeTheme = codeTheme(slide, theme);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const markdown = slide ? visibleMarkdown(slide, forcedStep ?? step) : "# No slides";
   const components = useMemo(() => ({
+    pre(props: { children?: ReactNode }) {
+      return isValidElement(props.children) && props.children.type === CodeCell ? props.children : <pre>{props.children}</pre>;
+    },
     code(props: { className?: string; children?: React.ReactNode }) {
       const match = /language-(\w+)/.exec(props.className ?? "");
       if (match?.[1] === "python") {
         const source = textFromNode(props.children);
         const hash = Array.from(source).reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 7).toString(36);
         const id = `${slide?.id ?? "slide"}-python-${hash}`;
-        return exportMode ? <pre className="export-code"><code>{source}</code></pre> : <CodeCell id={id} initialCode={source} />;
+        return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} initialCode={source} theme={resolvedCodeTheme} />;
       }
       return <code className={props.className}>{props.children}</code>;
     },
-  }), [slide?.id, exportMode]);
+  }), [slide?.id, exportMode, resolvedCodeTheme]);
 
   useEffect(() => setMenu(null), [slideIndex, mode]);
   useEffect(() => {
@@ -90,13 +94,13 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   };
 
   return <div className="stage-shell">
-    <article className={`slide-canvas ${backgroundTone(slide?.background)}`} style={slideThemeStyle(slide)} data-slide-index={slideIndex} onContextMenu={openMenu}>
+    <article className={`slide-canvas ${backgroundTone(slide?.background)} code-theme-${resolvedCodeTheme}`} style={slideThemeStyle(slide)} data-slide-index={slideIndex} onContextMenu={openMenu}>
       <div className="slide-accent" />
       <div className="slide-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{markdown}</ReactMarkdown></div>
       <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>
       <DrawingLayer />
       {!exportMode && showCamera && cameraStream && cameraLayout && moveCamera && <CameraPreview stream={cameraStream} layout={cameraLayout} move={moveCamera} />}
     </article>
-    {menu && <div className="slide-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}><button role="menuitem" onClick={applyToAll}><Paintbrush /><span><b>Apply theme to all slides</b><small>Copy fonts, colors, and background</small></span></button></div>}
+    {menu && <div className="slide-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}><button role="menuitem" onClick={applyToAll}><Paintbrush /><span><b>Apply theme to all slides</b><small>Copy fonts, colors, background, and code style</small></span></button></div>}
   </div>;
 }
