@@ -262,7 +262,7 @@ Use an `echarts` fenced block containing a valid JSON option object. Presenta re
 
 The option must use JSON syntax, so quote property names and strings and omit JavaScript functions. ECharts supports bar, line, pie, scatter, and other standard series types.
 
-Set `"animation": true` when a chart should animate as its slide appears. Use ECharts options such as `animationDuration`, `animationDelay`, `animationEasing`, `animationDurationUpdate`, and `animationEasingUpdate` to tune the motion. Set `"animation": false` for a static chart. Presenta replays enabled chart animations when the audience enters the slide, respects the viewer's reduced-motion preference, and disables motion while capturing PDF exports.
+Set `"animation": true` when a chart should animate. Use ECharts options such as `animationDuration`, `animationDelay`, `animationEasing`, `animationDurationUpdate`, and `animationEasingUpdate` to tune the motion. Set `"animation": false` for a static chart. In the editor the chart animates as it appears; while presenting or recording it waits in its final state until you click **Animate chart** in the presentation controls or press **A**. You can replay it as often as needed. Presenta respects the viewer's reduced-motion preference and disables motion while capturing PDF exports.
 
 Use **Slide theme** in the top toolbar to choose a light or dark code theme and set code blocks to full, 75%, or 50% width. These settings apply to the current slide and can be copied to all slides. They are also stored in Markdown as part of the slide style:
 

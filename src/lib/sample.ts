@@ -126,7 +126,7 @@ This illustrative series tracks completed rehearsal passes.
 The final rehearsal passed **nine of ten checks**.
 
 ???
-The chart animates on entry. Advance once to reveal the evidence-based takeaway.
+In presentation mode, play the chart on cue with **Animate chart** or **A**. Advance once to reveal the evidence-based takeaway.
 
 ---
 
@@ -169,7 +169,7 @@ The chart animates on entry. Advance once to reveal the evidence-based takeaway.
 
 <!-- step -->
 
-The chart appears on the first reveal and replays its animation.
+The chart appears on the first reveal. While presenting or recording, use **Animate chart** or press **A** to play it on cue.
 
 <!-- /columns -->
 

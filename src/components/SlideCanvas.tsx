@@ -50,8 +50,9 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {
-  const { slides, slideIndex, step, mode, theme, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
+  const { slides, slideIndex, step, mode, theme, recording, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
   const resolvedCodeTheme = codeTheme(slide, theme);
+  const manualChartPlayback = !exportMode && (mode === "present" || recording);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const markdown = slide ? visibleMarkdown(slide, forcedStep ?? step) : "# No slides";
   const components = useMemo(() => ({
@@ -67,11 +68,11 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
         return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} initialCode={source} theme={resolvedCodeTheme} />;
       }
       if (match?.[1] === "echarts") {
-        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} replayKey={slide?.id ?? "slide"} />;
+        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} replayKey={slide?.id ?? "slide"} manualPlayback={manualChartPlayback} />;
       }
       return <code className={props.className}>{props.children}</code>;
     },
-  }), [slide?.id, exportMode, resolvedCodeTheme]);
+  }), [slide?.id, exportMode, manualChartPlayback, resolvedCodeTheme]);
 
   useEffect(() => setMenu(null), [slideIndex, mode]);
   useEffect(() => {

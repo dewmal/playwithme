@@ -31,6 +31,7 @@ Open a project folder containing one or more Markdown presentation files. Decks 
 | Space / → | Next reveal or slide |
 | ← | Previous reveal or slide |
 | R | Run first Python cell on the slide |
+| A | Replay visible chart animations while presenting or recording |
 | D / L / E | Pen / laser / eraser |
 | F | Presentation mode |
 | Esc | Return to select mode |

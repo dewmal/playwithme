@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 
+export const CHART_ANIMATION_EVENT = "presenta:animate-charts";
+
 function parseOption(source: string): EChartsOption {
   const value: unknown = JSON.parse(source);
   if (!value || Array.isArray(value) || typeof value !== "object") {
@@ -10,7 +12,7 @@ function parseOption(source: string): EChartsOption {
   return value as EChartsOption;
 }
 
-export function EChart({ source, theme, replayKey }: { source: string; theme: "light" | "dark"; replayKey: string }) {
+export function EChart({ source, theme, replayKey, manualPlayback = false }: { source: string; theme: "light" | "dark"; replayKey: string; manualPlayback?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [renderFailure, setRenderFailure] = useState<{ source: string; message: string } | null>(null);
   const parsed = useMemo(() => {
@@ -30,21 +32,29 @@ export function EChart({ source, theme, replayKey }: { source: string; theme: "l
     const resizeObserver = new ResizeObserver(() => chart.resize());
     resizeObserver.observe(element);
 
-    try {
-      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      const option = document.body.classList.contains("exporting") || reduceMotion
-        ? { ...parsed.option, animation: false }
-        : parsed.option;
-      chart.setOption(option, { notMerge: true });
-    } catch (error) {
-      setRenderFailure({ source, message: error instanceof Error ? error.message : "ECharts could not render this option." });
-    }
+    const render = (animate: boolean) => {
+      try {
+        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+        const option = document.body.classList.contains("exporting") || reduceMotion || !animate
+          ? { ...parsed.option, animation: false }
+          : parsed.option;
+        chart.clear();
+        chart.setOption(option, { notMerge: true });
+      } catch (error) {
+        setRenderFailure({ source, message: error instanceof Error ? error.message : "ECharts could not render this option." });
+      }
+    };
+
+    render(!manualPlayback);
+    const replay = () => render(true);
+    if (manualPlayback) window.addEventListener(CHART_ANIMATION_EVENT, replay);
 
     return () => {
+      window.removeEventListener(CHART_ANIMATION_EVENT, replay);
       resizeObserver.disconnect();
       chart.dispose();
     };
-  }, [parsed.option, replayKey, source, theme]);
+  }, [manualPlayback, parsed.option, replayKey, source, theme]);
 
   const error = parsed.error ?? (renderFailure?.source === source ? renderFailure.message : null);
   return <div className={`echart-frame${error ? " invalid" : ""}`}>
