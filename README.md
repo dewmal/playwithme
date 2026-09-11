@@ -2,6 +2,8 @@
 
 A local-first presentation studio combining Markdown slides, persistent Python code, vector ink, session recording, and export.
 
+See [How to Create a Presentation](CREATE_PRESENTATION.md) for the Markdown authoring guide.
+
 ## Run in a browser
 
 ```bash

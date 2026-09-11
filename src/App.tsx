@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, Play, Save, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Code2, Download, FilePlus2, FolderOpen, Fullscreen, LoaderCircle, Menu, Mic, Play, Save, Sparkles } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { DrawingToolbar } from "./components/DrawingToolbar";
 import { SourcePanel } from "./components/SourcePanel";
 import { ExportDialog } from "./components/ExportDialog";
+import { HelpDialog } from "./components/HelpDialog";
 import { useAppStore } from "./store";
 import { createPresentation, openPresentation, savePresentation } from "./lib/native";
 import { useRecorder } from "./hooks/useRecorder";
@@ -13,7 +14,7 @@ import { NEW_PRESENTATION_MARKDOWN } from "./lib/sample";
 const clock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 export default function App() {
-  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [toast, setToast] = useState("");
+  const store = useAppStore(); const [source, setSource] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [toast, setToast] = useState("");
   const recorder = useRecorder();
   const notify = (message: string, duration = 2600) => { setToast(message); window.setTimeout(() => setToast(""), duration); };
   const newDeck = async () => {
@@ -56,7 +57,7 @@ export default function App() {
         <div className="top-left">{!store.sidebarOpen && <button onClick={() => store.setSidebar(true)} title="Show slides"><Menu /></button>}<span className="deck-name">{store.folder?.split(/[\\/]/).at(-1) ?? "Untitled presentation"}</span><span className="save-state"><i /> Saved</span></div>
         <div className="top-actions">
           <button onClick={newDeck}><FilePlus2 /> New</button><button onClick={openDeck}><FolderOpen /> Open</button><button onClick={saveDeck}><Save /> Save</button><button onClick={() => setSource(!source)} className={source ? "active" : ""}><Code2 /> Source</button>
-          <button onClick={() => setExportOpen(true)}><Download /> Export</button>
+          <button onClick={() => setHelpOpen(true)}><CircleHelp /> Help</button><button onClick={() => setExportOpen(true)}><Download /> Export</button>
           <button className="present-button" onClick={togglePresent}><Play /> Present <ChevronDown /></button>
         </div>
       </header>
@@ -72,6 +73,7 @@ export default function App() {
       </footer>
     </main>
     {exportOpen && <ExportDialog close={() => setExportOpen(false)} videoPath={recorder.lastVideoPath} processingStatus={recorder.processingStatus} />}
+    {helpOpen && <HelpDialog close={() => setHelpOpen(false)} />}
     {toast && <div className="toast">{toast}</div>}
   </div>;
 }
