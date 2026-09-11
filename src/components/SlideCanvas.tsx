@@ -1,4 +1,4 @@
-import { isValidElement, useMemo, type ReactNode } from "react";
+import { isValidElement, useEffect, useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -16,7 +16,18 @@ function textFromNode(node: ReactNode): string {
   return "";
 }
 
-export function SlideCanvas({ exportMode = false, forcedStep }: { exportMode?: boolean; forcedStep?: number }) {
+function CameraPreview({ stream }: { stream: MediaStream }) {
+  const video = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!video.current) return;
+    video.current.srcObject = stream;
+    video.current.play().catch(() => undefined);
+    return () => { if (video.current) video.current.srcObject = null; };
+  }, [stream]);
+  return <div className="camera-preview" aria-label="Camera preview"><video ref={video} autoPlay muted playsInline /></div>;
+}
+
+export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean }) {
   const { slides, slideIndex, step } = useAppStore(); const slide = slides[slideIndex];
   const markdown = slide ? visibleMarkdown(slide, forcedStep ?? step) : "# No slides";
   const components = useMemo(() => ({
@@ -38,6 +49,7 @@ export function SlideCanvas({ exportMode = false, forcedStep }: { exportMode?: b
       <div className="slide-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{markdown}</ReactMarkdown></div>
       <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>
       <DrawingLayer />
+      {!exportMode && showCamera && cameraStream && <CameraPreview stream={cameraStream} />}
     </article>
   </div>;
 }

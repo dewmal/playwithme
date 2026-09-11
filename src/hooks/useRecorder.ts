@@ -13,6 +13,8 @@ export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null);
   const videoRecorder = useRef<MediaRecorder | null>(null);
   const previewStream = useRef<MediaStream | null>(null);
+  const cameraPreviewStream = useRef<MediaStream | null>(null);
+  const cameraEnabledRef = useRef(true);
   const audioContext = useRef<AudioContext | null>(null);
   const meterFrame = useRef(0);
   const chunks = useRef<Blob[]>([]);
@@ -24,6 +26,13 @@ export function useRecorder() {
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [selectedDeviceLabel, setSelectedDeviceLabel] = useState("Default microphone");
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+  const [selectedCameraLabel, setSelectedCameraLabel] = useState("Default camera");
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [cameraPermission, setCameraPermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
+  const [cameraError, setCameraError] = useState("");
   const [microphonePermission, setMicrophonePermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
   const [microphoneError, setMicrophoneError] = useState("");
   const [waveform, setWaveform] = useState<number[]>(EMPTY_WAVEFORM);
@@ -51,6 +60,9 @@ export function useRecorder() {
   const stopPreview = () => {
     if (previewStream.current && previewStream.current !== recorder.current?.stream) previewStream.current.getTracks().forEach((track) => track.stop());
     previewStream.current = null;
+    cameraPreviewStream.current?.getTracks().forEach((track) => track.stop());
+    cameraPreviewStream.current = null;
+    setCameraStream(null);
     stopMeter();
   };
 
@@ -84,6 +96,13 @@ export function useRecorder() {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
     setMicrophones(devices);
+    return devices;
+  };
+
+  const refreshCameras = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "videoinput");
+    setCameras(devices);
     return devices;
   };
 
@@ -122,9 +141,43 @@ export function useRecorder() {
     startMeter(stream);
   };
 
+  const openCamera = async (deviceId = selectedCameraId) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraPermission("unavailable");
+      setCameraError("Camera capture is not supported on this device.");
+      throw new Error("Camera capture is not supported on this device");
+    }
+    cameraPreviewStream.current?.getTracks().forEach((track) => track.stop());
+    cameraPreviewStream.current = null;
+    setCameraStream(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
+      });
+      cameraPreviewStream.current = stream;
+      setCameraStream(stream);
+      setCameraPermission("granted");
+      setCameraError("");
+      const devices = await refreshCameras();
+      const track = stream.getVideoTracks()[0];
+      const actualId = track.getSettings().deviceId ?? deviceId;
+      const device = devices.find((item) => item.deviceId === actualId);
+      setSelectedCameraId(actualId ?? "");
+      setSelectedCameraLabel(device?.label || track.label || "Default camera");
+    } catch (error) {
+      const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
+      setCameraPermission(denied ? "denied" : "unavailable");
+      setCameraError(denied ? "Camera access is blocked. Allow Presenta to use the camera, then try again." : error instanceof Error ? error.message : "The camera could not be opened.");
+      throw error;
+    }
+  };
+
   const prepareMicrophone = async () => {
-    setProcessingStatus("Checking microphone…");
-    try { await openMicrophone(); } finally { setProcessingStatus(null); }
+    setProcessingStatus("Checking recording devices…");
+    try {
+      await openMicrophone();
+      if (cameraEnabledRef.current) await openCamera().catch(() => undefined);
+    } finally { setProcessingStatus(null); }
   };
 
   const selectMicrophone = async (deviceId: string) => {
@@ -133,12 +186,26 @@ export function useRecorder() {
     try { await openMicrophone(deviceId); } finally { setProcessingStatus(null); }
   };
 
+  const selectCamera = async (deviceId: string) => {
+    setSelectedCameraId(deviceId);
+    setProcessingStatus("Switching camera…");
+    try { await openCamera(deviceId); } finally { setProcessingStatus(null); }
+  };
+
+  const toggleCamera = async () => {
+    const enabled = !cameraEnabledRef.current;
+    cameraEnabledRef.current = enabled;
+    setCameraEnabled(enabled);
+    if (enabled && !cameraPreviewStream.current) await openCamera();
+  };
+
   useEffect(() => {
     const handleDeviceChange = () => { refreshMicrophones().catch(() => undefined); };
     navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
     return () => {
       navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
       previewStream.current?.getTracks().forEach((track) => track.stop());
+      cameraPreviewStream.current?.getTracks().forEach((track) => track.stop());
       cancelAnimationFrame(meterFrame.current);
       audioContext.current?.close().catch(() => undefined);
       clearInterval(timer.current);
@@ -152,10 +219,20 @@ export function useRecorder() {
     const output = document.createElement("canvas"); output.width = VIDEO_WIDTH; output.height = VIDEO_HEIGHT;
     const context = output.getContext("2d");
     if (!context) throw new Error("Video rendering is not supported on this device");
+    const camera = document.createElement("video");
+    camera.muted = true; camera.playsInline = true;
+    if (cameraPreviewStream.current) {
+      camera.srcObject = cameraPreviewStream.current;
+      await camera.play().catch(() => undefined);
+    }
     renderingFrames.current = true;
     const renderFrame = async () => {
       if (!renderingFrames.current) return;
       try {
+        if (camera.srcObject !== cameraPreviewStream.current) {
+          camera.srcObject = cameraPreviewStream.current;
+          if (cameraPreviewStream.current) camera.play().catch(() => undefined);
+        }
         const bounds = slide.getBoundingClientRect();
         const renderScale = Math.max(VIDEO_WIDTH / bounds.width, VIDEO_HEIGHT / bounds.height);
         const frame = await html2canvas(slide, {
@@ -165,11 +242,27 @@ export function useRecorder() {
             if (!clonedSlide) return;
             clonedSlide.style.setProperty("box-shadow", "none", "important");
             clonedSlide.style.setProperty("background", "#f4f0e8", "important");
+            documentClone.querySelector<HTMLElement>(".camera-preview")?.style.setProperty("display", "none", "important");
           },
         });
         context.fillStyle = "#f4f0e8";
         context.fillRect(0, 0, output.width, output.height);
         context.drawImage(frame, 0, 0, output.width, output.height);
+        if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          const width = 720; const height = 405; const margin = 90; const radius = 38;
+          const x = output.width - width - margin; const y = output.height - height - margin;
+          context.save();
+          context.beginPath();
+          context.roundRect(x, y, width, height, radius);
+          context.clip();
+          context.translate(x + width, y);
+          context.scale(-1, 1);
+          context.drawImage(camera, 0, 0, width, height);
+          context.restore();
+          context.save();
+          context.strokeStyle = "rgba(255,255,255,.9)"; context.lineWidth = 10;
+          context.beginPath(); context.roundRect(x, y, width, height, radius); context.stroke(); context.restore();
+        }
       } finally { if (renderingFrames.current) frameTimer.current = window.setTimeout(renderFrame, 100); }
     };
     await renderFrame();
@@ -184,6 +277,10 @@ export function useRecorder() {
     try {
       if (!stream || !stream.active) { await openMicrophone(); stream = previewStream.current; }
       if (!stream) throw new Error("The selected microphone is unavailable");
+      if (cameraEnabledRef.current && !cameraPreviewStream.current) {
+        cameraEnabledRef.current = false;
+        setCameraEnabled(false);
+      }
       slideStream = await createSlideStream();
     } catch (error) {
       renderingFrames.current = false; clearTimeout(frameTimer.current); slideStream?.getTracks().forEach((track) => track.stop()); stopPreview(); setProcessingStatus(null);
@@ -228,7 +325,9 @@ export function useRecorder() {
         const activeVideo = videoRecorder.current!;
         activeVideo.onstop = () => resolve(new Blob(videoChunks.current, { type: activeVideo.mimeType })); activeVideo.stop(); activeVideo.stream.getTracks().forEach((track) => track.stop());
       }) : undefined;
-      previewStream.current = null; stopMeter(); store.stopRecording(); setPaused(false);
+      previewStream.current = null;
+      cameraPreviewStream.current?.getTracks().forEach((track) => track.stop()); cameraPreviewStream.current = null; setCameraStream(null);
+      stopMeter(); store.stopRecording(); setPaused(false);
       const current = useAppStore.getState();
       const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
@@ -236,5 +335,5 @@ export function useRecorder() {
     } finally { recorder.current = null; videoRecorder.current = null; setProcessingStatus(null); }
   };
 
-  return { elapsed, paused, lastVideoPath, processingStatus, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, prepareMicrophone, selectMicrophone, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop };
+  return { elapsed, paused, lastVideoPath, processingStatus, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop };
 }

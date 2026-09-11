@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Presenta uses your microphone to record narration with your presentation session.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Presenta uses your camera to include your video in presentation recordings.</string>
 </dict>
 </plist>
