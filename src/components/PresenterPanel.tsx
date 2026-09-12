@@ -35,6 +35,9 @@ export function PresenterPanel({ elapsed, paused, recording, processing, microph
   const current = slides[slideIndex];
   const next = slides[slideIndex + 1];
   const playingSection = sections.find((section) => section.id === playingSectionId);
+  const savedDuration = sections.reduce((total, section) => total + section.duration, 0);
+  const replacedDuration = retakeSectionId ? sections.find((section) => section.id === retakeSectionId)?.duration ?? 0 : 0;
+  const totalDuration = recording ? Math.max(0, savedDuration - replacedDuration + elapsed) : savedDuration;
 
   useEffect(() => {
     if (recording || (playingSectionId && !playingSection)) {
@@ -78,7 +81,7 @@ export function PresenterPanel({ elapsed, paused, recording, processing, microph
     </section>
 
     <section className="recording-timeline" aria-label="Recording timeline">
-      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording || processing}>Clear recordings</button>}<button className="clean-presentation" onClick={() => { if (window.confirm("Clean this presentation? This permanently deletes all drawings, code outputs, and recorded videos.")) cleanPresentation(); }} disabled={recording || processing}>Clean presentation</button></span></div>
+      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span className="timeline-stats"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span><strong>{clock(totalDuration)} total</strong></span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording || processing}>Clear recordings</button>}<button className="clean-presentation" onClick={() => { if (window.confirm("Clean this presentation? This permanently deletes all drawings, code outputs, and recorded videos.")) cleanPresentation(); }} disabled={recording || processing}>Clean presentation</button></span></div>
       {sections.length ? <div className="timeline-sections">{sections.map((section, index) => <article className={retakeSectionId === section.id ? "selected" : ""} key={section.id}>
         <span className="section-index">{index + 1}</span>
         <div><b>Section {index + 1}</b><small>Slide {section.slide + 1} · {clock(section.duration)}</small></div>
