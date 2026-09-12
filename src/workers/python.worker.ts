@@ -10,19 +10,33 @@ async function boot() {
   return pyodide;
 }
 
-self.onmessage = async (event: MessageEvent<{ id: string; code: string }>) => {
-  const { id, code } = event.data;
+self.onmessage = async (event: MessageEvent<{ id: string; code: string; inputs?: string[] }>) => {
+  const { id, code, inputs = [] } = event.data;
   try {
     const py = await boot();
     py.globals.set("__presenta_code", code);
+    py.globals.set("__presenta_inputs_json", JSON.stringify(inputs));
     const result = await py.runPythonAsync(`
-import ast, base64, contextlib, io, json, sys, traceback
+import ast, base64, builtins, contextlib, io, json, sys, traceback
 
-def __presenta_run(source):
+def __presenta_run(source, supplied_inputs):
     stdout = io.StringIO()
+    input_values = iter(supplied_inputs)
+    original_input = builtins.input
+
+    def slide_input(prompt=""):
+        try:
+            value = next(input_values)
+        except StopIteration:
+            raise EOFError("No value was supplied for input(). Add it under Program input and run again.")
+        # Mirror a terminal: input() displays its prompt and the entered value.
+        print(f"{prompt}{value}")
+        return value
+
     try:
         tree = ast.parse(source, mode="exec")
         last = None
+        builtins.input = slide_input
         with contextlib.redirect_stdout(stdout):
             if tree.body and isinstance(tree.body[-1], ast.Expr):
                 expr = tree.body.pop()
@@ -50,8 +64,10 @@ def __presenta_run(source):
         return json.dumps({"kind": "text", "data": text or "Done"})
     except Exception:
         return json.dumps({"kind": "error", "data": traceback.format_exc()})
+    finally:
+        builtins.input = original_input
 
-__presenta_run(__presenta_code)
+__presenta_run(__presenta_code, json.loads(__presenta_inputs_json))
     `);
     self.postMessage({ id, ...JSON.parse(String(result)) });
   } catch (error) {

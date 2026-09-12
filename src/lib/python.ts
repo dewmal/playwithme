@@ -21,11 +21,11 @@ export class PythonKernel {
     };
   }
 
-  run(cellId: string, code: string) {
+  run(cellId: string, code: string, inputs: string[] = []) {
     const id = crypto.randomUUID();
     return new Promise<CellOutput>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, cellId });
-      this.worker.postMessage({ id, code });
+      this.worker.postMessage({ id, code, inputs });
     });
   }
 }
