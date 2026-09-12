@@ -17,6 +17,7 @@ interface AppState {
   folder: string | null; settingsFolder: string | null; presentationFile: string | null; presentationFiles: string[]; markdown: string; slides: Slide[]; slideIndex: number; step: number;
   mode: Mode; theme: Theme; sidebarOpen: boolean; tool: Tool; color: string; width: number;
   drawings: Drawing[]; redoStack: Drawing[]; outputs: Record<string, CellOutput>; outputRevision: number;
+  slideResetRevisions: Record<string, number>;
   recording: boolean; recordingPaused: boolean; recordStarted: number | null; recordPausedAt: number | null; events: TimelineEvent[];
   setMarkdown: (value: string) => void; setSlideBackground: (color: string | null) => void; setSlideStyle: (style: Partial<SlideStyle>) => void; applyCurrentSlideStyleToAll: () => void; loadDeck: (folder: string | null, settingsFolder: string | null, presentationFile: string | null, presentationFiles: string[], markdown: string) => void;
   addSlide: () => void; goTo: (index: number, step?: number) => void; next: () => void; previous: () => void;
@@ -33,7 +34,7 @@ function timedEvent(start: number | null, event: Omit<TimelineEvent, "time">): T
 export const useAppStore = create<AppState>((set, get) => ({
   folder: null, settingsFolder: null, presentationFile: null, presentationFiles: [], markdown: SAMPLE_MARKDOWN, slides: parseSlides(SAMPLE_MARKDOWN), slideIndex: 0, step: 0,
   mode: "edit", theme: initialTheme(), sidebarOpen: true, tool: "select", color: "#ff4d67", width: 4,
-  drawings: [], redoStack: [], outputs: {}, outputRevision: 0, recording: false, recordingPaused: false, recordStarted: null, recordPausedAt: null, events: [],
+  drawings: [], redoStack: [], outputs: {}, outputRevision: 0, slideResetRevisions: {}, recording: false, recordingPaused: false, recordStarted: null, recordPausedAt: null, events: [],
   setMarkdown: (markdown) => set((state) => {
     const slides = parseSlides(markdown);
     return { markdown, slides, slideIndex: Math.min(state.slideIndex, Math.max(0, slides.length - 1)), step: 0 };
@@ -50,7 +51,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const markdown = applySlideStyleToAll(state.markdown, state.slideIndex);
     return { markdown, slides: parseSlides(markdown) };
   }),
-  loadDeck: (folder, settingsFolder, presentationFile, presentationFiles, markdown) => set((state) => ({ folder, settingsFolder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], outputs: {}, outputRevision: state.outputRevision + 1 })),
+  loadDeck: (folder, settingsFolder, presentationFile, presentationFiles, markdown) => set((state) => ({ folder, settingsFolder, presentationFile, presentationFiles, markdown, slides: parseSlides(markdown), slideIndex: 0, step: 0, drawings: [], redoStack: [], outputs: {}, outputRevision: state.outputRevision + 1, slideResetRevisions: {} })),
   addSlide: () => {
     const current = get();
     const content = "# Untitled slide\n\nStart writing your presentation.";
@@ -83,8 +84,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   addDrawing: (drawing) => { set((s) => ({ drawings: [...s.drawings, drawing], redoStack: [] })); get().addEvent({ type: "drawing", slide: get().slideIndex, data: drawing }); },
   undo: () => set((s) => { const mine = [...s.drawings]; const last = mine.pop(); return last ? { drawings: mine, redoStack: [...s.redoStack, last] } : s; }),
   redo: () => set((s) => { const redoStack = [...s.redoStack]; const last = redoStack.pop(); return last ? { drawings: [...s.drawings, last], redoStack } : s; }),
-  clearSlide: () => { const id = get().slides[get().slideIndex]?.id; set((s) => ({ drawings: s.drawings.filter((d) => d.slideId !== id) })); get().addEvent({ type: "drawing-clear", slide: get().slideIndex }); },
-  resetForRecording: () => set((state) => ({ drawings: [], redoStack: [], outputs: {}, outputRevision: state.outputRevision + 1 })),
+  clearSlide: () => {
+    const current = get();
+    const id = current.slides[current.slideIndex]?.id;
+    if (!id) return;
+    const cellPrefix = `${id}-python-`;
+    set((state) => ({
+      step: 0,
+      drawings: state.drawings.filter((drawing) => drawing.slideId !== id),
+      redoStack: state.redoStack.filter((drawing) => drawing.slideId !== id),
+      outputs: Object.fromEntries(Object.entries(state.outputs).filter(([cellId]) => !cellId.startsWith(cellPrefix))),
+      slideResetRevisions: { ...state.slideResetRevisions, [id]: (state.slideResetRevisions[id] ?? 0) + 1 },
+    }));
+    get().addEvent({ type: "slide-clear", slide: current.slideIndex, step: 0 });
+  },
+  resetForRecording: () => set((state) => ({
+    drawings: [],
+    redoStack: [],
+    outputs: {},
+    outputRevision: state.outputRevision + 1,
+    slideResetRevisions: Object.fromEntries(state.slides.map((slide) => [slide.id, (state.slideResetRevisions[slide.id] ?? 0) + 1])),
+  })),
   setOutput: (output) => { set((s) => ({ outputs: { ...s.outputs, [output.cellId]: output } })); get().addEvent({ type: "cell-output", cell: output.cellId, data: output }); },
   startRecording: () => { const now = performance.now(); set({ recording: true, recordingPaused: false, recordStarted: now, recordPausedAt: null, events: [{ time: 0, type: "slide", slide: get().slideIndex }] }); },
   pauseRecording: () => { const s = get(); if (s.recording && !s.recordingPaused) set({ recordingPaused: true, recordPausedAt: performance.now() }); },

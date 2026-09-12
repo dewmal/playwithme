@@ -83,7 +83,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {
-  const { slides, slideIndex, step, mode, theme, recording, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
+  const { slides, slideIndex, step, mode, theme, recording, slideResetRevisions, applyCurrentSlideStyleToAll } = useAppStore(); const slide = slides[slideIndex];
   const resolvedCodeTheme = codeTheme(slide, theme);
   const manualChartPlayback = !exportMode && (mode === "present" || recording);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -98,15 +98,17 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
       if (match?.[1] === "python") {
         const source = textFromNode(props.children);
         const hash = Array.from(source).reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 7).toString(36);
-        const id = `${slide?.id ?? "slide"}-python-${hash}`;
-        return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} initialCode={source} theme={resolvedCodeTheme} />;
+        const slideId = slide?.id ?? "slide";
+        const id = `${slideId}-python-${hash}`;
+        return exportMode ? <code className={props.className}>{props.children}</code> : <CodeCell id={id} slideId={slideId} initialCode={source} theme={resolvedCodeTheme} />;
       }
       if (match?.[1] === "echarts") {
-        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} replayKey={slide?.id ?? "slide"} manualPlayback={manualChartPlayback} />;
+        const slideId = slide?.id ?? "slide";
+        return <EChart source={textFromNode(props.children)} theme={resolvedCodeTheme} replayKey={`${slideId}-${slideResetRevisions[slideId] ?? 0}`} manualPlayback={manualChartPlayback} />;
       }
       return <code className={props.className}>{props.children}</code>;
     },
-  }), [slide?.id, exportMode, manualChartPlayback, resolvedCodeTheme]);
+  }), [slide?.id, slideResetRevisions, exportMode, manualChartPlayback, resolvedCodeTheme]);
 
   useEffect(() => setMenu(null), [slideIndex, mode]);
   useEffect(() => {

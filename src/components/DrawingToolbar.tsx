@@ -22,7 +22,7 @@ export function DrawingToolbar({ canAnimateChart = false, animationDisabled = fa
     <span className="tool-separator" />
     <button onClick={undo} aria-label="Undo"><RotateCcw /><ToolbarTooltip label="Undo" /></button>
     <button onClick={redo} aria-label="Redo"><Redo2 /><ToolbarTooltip label="Redo" /></button>
-    <button onClick={clearSlide} aria-label="Clear slide"><Trash2 /><ToolbarTooltip label="Clear slide" /></button>
+    <button onClick={clearSlide} aria-label="Clear selected slide"><Trash2 /><ToolbarTooltip label="Clear selected slide" /></button>
     {canAnimateChart && <><span className="tool-separator" /><button className="reanimate-chart" onClick={animateChart} disabled={animationDisabled} aria-label="Re-animate chart (A)"><BarChart3 /><ToolbarTooltip label={animationDisabled ? "Resume recording to re-animate" : "Re-animate chart"} shortcut="A" /></button></>}
   </div>;
 }
