@@ -1,14 +1,37 @@
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::{
     collections::hash_map::DefaultHasher,
     fs,
     hash::{Hash, Hasher},
     path::{Component, Path, PathBuf},
-    process::Command,
+    process::{Child, Command, Stdio},
+    sync::{Mutex, OnceLock},
 };
 use tauri::Manager;
 
 const APP_DIRECTORY: &str = ".presenta";
+
+#[derive(serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct CaptureRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+struct NativeRecording {
+    session_dir: PathBuf,
+    capture_rect: String,
+    segments: Vec<PathBuf>,
+    child: Option<Child>,
+}
+
+static NATIVE_RECORDING: OnceLock<Mutex<Option<NativeRecording>>> = OnceLock::new();
+
+fn native_recording_state() -> &'static Mutex<Option<NativeRecording>> {
+    NATIVE_RECORDING.get_or_init(|| Mutex::new(None))
+}
 
 fn ensure_app_layout(app: &Path, root: &Path) -> Result<PathBuf, String> {
     for directory in ["outputs", "sessions", "exports"] {
@@ -437,6 +460,269 @@ fn save_session(
     Ok(video_path)
 }
 
+fn validate_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err("Invalid session id".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn native_recording_available() -> bool {
+    cfg!(target_os = "macos") && Path::new("/usr/sbin/screencapture").is_file()
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_native_segment(recording: &mut NativeRecording) -> Result<(), String> {
+    let index = recording.segments.len();
+    let path = recording.session_dir.join(format!("native-{index}.mov"));
+    let child = Command::new("/usr/sbin/screencapture")
+        .args(["-v", "-x"])
+        .arg(format!("-R{}", recording.capture_rect))
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Native screen capture could not start: {error}"))?;
+    recording.segments.push(path);
+    recording.child = Some(child);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn spawn_native_segment(_recording: &mut NativeRecording) -> Result<(), String> {
+    Err("Native recording is currently available on macOS".into())
+}
+
+fn stop_native_segment(recording: &mut NativeRecording) -> Result<(), String> {
+    let Some(mut child) = recording.child.take() else {
+        return Ok(());
+    };
+    let pid = child.id().to_string();
+    let status = Command::new("kill")
+        .args(["-INT", &pid])
+        .status()
+        .map_err(|error| format!("Could not stop native screen capture: {error}"))?;
+    if !status.success() {
+        let _ = child.kill();
+    }
+    child
+        .wait()
+        .map_err(|error| format!("Could not finish native screen capture: {error}"))?;
+    let path = recording
+        .segments
+        .last()
+        .ok_or("Native recording did not create a video segment")?;
+    if !path.is_file() || fs::metadata(path).map_err(|error| error.to_string())?.len() == 0 {
+        return Err("Native screen capture did not produce a video. Check Screen Recording permission and try again.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn start_native_recording(
+    window: tauri::WebviewWindow,
+    settings_folder: String,
+    session_id: String,
+    rect: CaptureRect,
+) -> Result<(), String> {
+    if !native_recording_available() {
+        return Err("Native recording is not available on this platform".into());
+    }
+    validate_session_id(&session_id)?;
+    if !rect.x.is_finite()
+        || !rect.y.is_finite()
+        || !rect.width.is_finite()
+        || !rect.height.is_finite()
+        || rect.width < 64.0
+        || rect.height < 64.0
+    {
+        return Err("The presentation capture area is invalid".into());
+    }
+    let settings = settings_path(&settings_folder)?;
+    let session_dir = settings.join("sessions").join(&session_id);
+    fs::create_dir_all(&session_dir).map_err(|error| error.to_string())?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let origin = window.inner_position().map_err(|error| error.to_string())?;
+    let x = (origin.x as f64 / scale + rect.x).round() as i32;
+    let y = (origin.y as f64 / scale + rect.y).round() as i32;
+    let width = rect.width.round().max(64.0) as u32;
+    let height = rect.height.round().max(64.0) as u32;
+    let mut state = native_recording_state()
+        .lock()
+        .map_err(|_| "Native recording state is unavailable")?;
+    if state.is_some() {
+        return Err("A native recording is already active".into());
+    }
+    let mut recording = NativeRecording {
+        session_dir,
+        capture_rect: format!("{x},{y},{width},{height}"),
+        segments: Vec::new(),
+        child: None,
+    };
+    spawn_native_segment(&mut recording)?;
+    *state = Some(recording);
+    Ok(())
+}
+
+#[tauri::command]
+fn pause_native_recording() -> Result<(), String> {
+    let mut state = native_recording_state()
+        .lock()
+        .map_err(|_| "Native recording state is unavailable")?;
+    let recording = state.as_mut().ok_or("No native recording is active")?;
+    stop_native_segment(recording)
+}
+
+#[tauri::command]
+fn resume_native_recording() -> Result<(), String> {
+    let mut state = native_recording_state()
+        .lock()
+        .map_err(|_| "Native recording state is unavailable")?;
+    let recording = state.as_mut().ok_or("No native recording is active")?;
+    if recording.child.is_some() {
+        return Ok(());
+    }
+    spawn_native_segment(recording)
+}
+
+fn run_ffmpeg_args(args: &[&str], output: &Path, failure: &str) -> Result<(), String> {
+    for program in [
+        "ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ] {
+        let result = Command::new(program).args(args).arg(output).status();
+        match result {
+            Ok(status) if status.success() => return Ok(()),
+            Ok(_) => return Err(failure.into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("FFmpeg could not start: {error}")),
+        }
+    }
+    Err("FFmpeg was not found. Install FFmpeg and try again".into())
+}
+
+#[tauri::command]
+fn stop_native_recording() -> Result<String, String> {
+    let mut recording = native_recording_state()
+        .lock()
+        .map_err(|_| "Native recording state is unavailable")?
+        .take()
+        .ok_or("No native recording is active")?;
+    stop_native_segment(&mut recording)?;
+    let capture = recording.session_dir.join("capture-native.mov");
+    if recording.segments.len() == 1 {
+        fs::rename(&recording.segments[0], &capture)
+            .or_else(|_| fs::copy(&recording.segments[0], &capture).map(|_| ()))
+            .map_err(|error| error.to_string())?;
+    } else {
+        let manifest = recording.session_dir.join("native-segments.txt");
+        let entries = recording
+            .segments
+            .iter()
+            .map(|path| format!("file '{}'", path.to_string_lossy().replace('\'', "'\\''")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&manifest, entries).map_err(|error| error.to_string())?;
+        let manifest_value = manifest.to_string_lossy().into_owned();
+        run_ffmpeg_args(
+            &[
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                &manifest_value,
+                "-c",
+                "copy",
+            ],
+            &capture,
+            "FFmpeg could not join the native recording segments",
+        )?;
+        let _ = fs::remove_file(manifest);
+        for segment in recording.segments {
+            let _ = fs::remove_file(segment);
+        }
+    }
+    Ok(capture.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn finalize_native_recording(
+    settings_folder: String,
+    session_id: String,
+    capture_path: String,
+) -> Result<String, String> {
+    validate_session_id(&session_id)?;
+    let settings = settings_path(&settings_folder)?;
+    let session_dir = settings.join("sessions").join(&session_id);
+    let allowed = session_dir
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let capture = PathBuf::from(capture_path)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    if !capture.starts_with(&allowed)
+        || capture.extension().and_then(|value| value.to_str()) != Some("mov")
+    {
+        return Err("The native capture is outside this recording session".into());
+    }
+    let narration = session_dir.join("narration.webm");
+    let exports = settings.join("exports");
+    fs::create_dir_all(&exports).map_err(|error| error.to_string())?;
+    let output = exports.join(format!("{session_id}.mp4"));
+    let capture_value = capture.to_string_lossy().into_owned();
+    if narration.is_file() {
+        let narration_value = narration.to_string_lossy().into_owned();
+        run_ffmpeg_args(
+            &[
+                "-y",
+                "-i",
+                &capture_value,
+                "-i",
+                &narration_value,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+            ],
+            &output,
+            "FFmpeg could not add narration to the native recording",
+        )?;
+    } else {
+        run_ffmpeg_args(
+            &[
+                "-y",
+                "-i",
+                &capture_value,
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                "-an",
+                "-movflags",
+                "+faststart",
+            ],
+            &output,
+            "FFmpeg could not finalize the native recording",
+        )?;
+    }
+    let _ = fs::remove_file(capture);
+    Ok(output.to_string_lossy().into_owned())
+}
+
 fn run_ffmpeg(input: &Path, output: &Path) -> Result<(), String> {
     for program in [
         "ffmpeg",
@@ -768,6 +1054,12 @@ pub fn run() {
             create_presentation,
             save_presentation,
             save_session,
+            native_recording_available,
+            start_native_recording,
+            pause_native_recording,
+            resume_native_recording,
+            stop_native_recording,
+            finalize_native_recording,
             load_recording_timeline,
             save_recording_timeline,
             load_recording_video,

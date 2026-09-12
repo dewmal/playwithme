@@ -63,4 +63,4 @@ Sessions are stored under `<settings-location>/sessions/<timestamp>/` with separ
 
 ### macOS debug permissions
 
-Use `npm run debug:macos` when testing recording. It builds and launches a debug app bundle with a stable signing identifier so macOS can retain microphone permission between rebuilds. Video is rendered directly from the presentation area and does not require Screen & System Audio Recording permission.
+Use `npm run debug:macos` when testing recording. It builds and launches a debug app bundle with a stable signing identifier so macOS can retain microphone and screen-recording permissions between rebuilds. The macOS desktop app captures only the visible slide rectangle with the system recorder and hardware video pipeline, then adds the selected microphone track after capture. This avoids rebuilding and encoding 4K DOM screenshots on the UI thread. Browser and non-macOS builds retain a lower-resolution canvas fallback.

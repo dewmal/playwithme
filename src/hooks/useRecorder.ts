@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
-import { clearRecordingTimeline, exportRecordingSections, loadRecordingPreview, loadRecordingTimeline, saveRecordingTimeline, saveSession } from "../lib/native";
+import { clearRecordingTimeline, exportRecordingSections, finalizeNativeRecording, loadRecordingPreview, loadRecordingTimeline, nativeRecordingAvailable, pauseNativeRecording, resumeNativeRecording, saveRecordingTimeline, saveSession, startNativeRecording, stopNativeRecording } from "../lib/native";
 import type { CameraLayout, RecordingSection, SessionData } from "../types";
 
-const VIDEO_WIDTH = 3840;
-const VIDEO_HEIGHT = 2160;
-const VIDEO_BIT_RATE = 24_000_000;
+const VIDEO_WIDTH = 1920;
+const VIDEO_HEIGHT = 1080;
+const VIDEO_BIT_RATE = 8_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
 const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 };
 
@@ -21,6 +21,8 @@ export function useRecorder() {
   const meterFrame = useRef(0);
   const chunks = useRef<Blob[]>([]);
   const videoChunks = useRef<Blob[]>([]);
+  const usingNativeCapture = useRef(false);
+  const activeSessionId = useRef("");
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const assembledVideoPath = useRef<string | null>(null);
@@ -232,6 +234,7 @@ export function useRecorder() {
       audioContext.current?.close().catch(() => undefined);
       clearInterval(timer.current);
       clearTimeout(frameTimer.current);
+      if (usingNativeCapture.current) stopNativeRecording().catch(() => undefined);
       sectionsRef.current.forEach((section) => { if (section.previewUrl) URL.revokeObjectURL(section.previewUrl); });
     };
   }, []);
@@ -357,7 +360,28 @@ export function useRecorder() {
         // first frame. Without this paint boundary, old ink can enter the video.
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       }
-      slideStream = await createSlideStream();
+      const state = useAppStore.getState();
+      activeSessionId.current = new Date().toISOString().replace(/[:.]/g, "-");
+      usingNativeCapture.current = !!state.settingsFolder && await nativeRecordingAvailable();
+      if (usingNativeCapture.current) {
+        const slide = document.querySelector<HTMLElement>(".slide-canvas");
+        if (!slide) throw new Error("The presentation area is not available");
+        const bounds = slide.getBoundingClientRect();
+        // On macOS, Tauri's native window origin includes the title bar while
+        // getBoundingClientRect() starts at the webview's content origin.
+        // Move the native crop into the content area so window chrome is not
+        // recorded above the slide (Retina capture makes this gap look 2x).
+        const windowBorderX = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
+        const windowChromeY = Math.max(0, window.outerHeight - window.innerHeight);
+        await startNativeRecording(state.settingsFolder!, activeSessionId.current, {
+          x: bounds.left + windowBorderX,
+          y: bounds.top + windowChromeY,
+          width: bounds.width,
+          height: bounds.height,
+        });
+      } else {
+        slideStream = await createSlideStream();
+      }
     } catch (error) {
       renderingFrames.current = false; clearTimeout(frameTimer.current); slideStream?.getTracks().forEach((track) => track.stop()); stopPreview(); setProcessingStatus(null);
       const detail = error instanceof Error && error.message ? `: ${error.message}` : "";
@@ -367,11 +391,15 @@ export function useRecorder() {
     chunks.current = [];
     recorder.current = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : undefined });
     recorder.current.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data); };
-    const combined = new MediaStream([...slideStream.getVideoTracks(), ...stream.getAudioTracks()]);
     videoChunks.current = [];
-    videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm", videoBitsPerSecond: VIDEO_BIT_RATE, audioBitsPerSecond: 192_000 });
-    videoRecorder.current.ondataavailable = (event) => { if (event.data.size) videoChunks.current.push(event.data); };
-    videoRecorder.current.start(1000);
+    if (slideStream) {
+      const combined = new MediaStream([...slideStream.getVideoTracks(), ...stream.getAudioTracks()]);
+      videoRecorder.current = new MediaRecorder(combined, { mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm", videoBitsPerSecond: VIDEO_BIT_RATE, audioBitsPerSecond: 192_000 });
+      videoRecorder.current.ondataavailable = (event) => { if (event.data.size) videoChunks.current.push(event.data); };
+      videoRecorder.current.start(1000);
+    } else {
+      videoRecorder.current = null;
+    }
     const state = useAppStore.getState();
     sectionStartedAt.current = { slide: state.slideIndex, step: state.step };
     recorder.current.start(1000); store.startRecording(); accumulatedMs.current = 0; activeStartedAt.current = performance.now(); sessionStartedAt.current = Date.now(); setElapsed(0); setPaused(false); setProcessingStatus(null); startTimer();
@@ -381,6 +409,7 @@ export function useRecorder() {
     if (!recorder.current || recorder.current.state !== "recording") return;
     recorder.current.pause();
     if (videoRecorder.current?.state === "recording") videoRecorder.current.pause();
+    if (usingNativeCapture.current) pauseNativeRecording().catch(() => undefined);
     accumulatedMs.current += performance.now() - activeStartedAt.current;
     clearInterval(timer.current); setElapsed(Math.floor(accumulatedMs.current / 1000)); setPaused(true); store.pauseRecording();
   };
@@ -388,6 +417,7 @@ export function useRecorder() {
     if (!recorder.current || recorder.current.state !== "paused") return;
     recorder.current.resume();
     if (videoRecorder.current?.state === "paused") videoRecorder.current.resume();
+    if (usingNativeCapture.current) resumeNativeRecording().catch(() => undefined);
     activeStartedAt.current = performance.now(); setPaused(false); store.resumeRecording(); startTimer();
   };
   const stop = async () => {
@@ -399,6 +429,7 @@ export function useRecorder() {
     clearInterval(timer.current); setElapsed(duration); setProcessingStatus("Finalizing recording…");
     try {
       const active = recorder.current;
+      const nativeCapture = usingNativeCapture.current ? stopNativeRecording() : Promise.resolve<string | null>(null);
       const audio = await new Promise<Blob>((resolve) => { active.onstop = () => resolve(new Blob(chunks.current, { type: active.mimeType })); active.stop(); active.stream.getTracks().forEach((track) => track.stop()); });
       const video = videoRecorder.current ? await new Promise<Blob>((resolve) => {
         const activeVideo = videoRecorder.current!;
@@ -408,9 +439,14 @@ export function useRecorder() {
       cameraPreviewStream.current?.getTracks().forEach((track) => track.stop()); cameraPreviewStream.current = null; setCameraStream(null);
       stopMeter(); store.stopRecording(); setPaused(false);
       const current = useAppStore.getState();
-      const session: SessionData = { id: new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
+      const session: SessionData = { id: activeSessionId.current || new Date().toISOString().replace(/[:.]/g, "-"), startedAt: new Date(sessionStartedAt.current).toISOString(), duration, events: current.events, outputs: current.outputs, drawings: current.drawings };
       setProcessingStatus(video ? "Encoding MP4…" : "Saving session…");
-      const videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video);
+      const nativeCapturePath = await nativeCapture;
+      let videoPath = await saveSession(current.folder, current.settingsFolder, current.presentationFile, session, audio, video);
+      if (nativeCapturePath && current.settingsFolder) {
+        setProcessingStatus("Adding narration to native recording…");
+        videoPath = await finalizeNativeRecording(current.settingsFolder, session.id, nativeCapturePath);
+      }
       if (videoPath && !recordingFiles.current.includes(videoPath)) recordingFiles.current.push(videoPath);
       const previewUrl = video ? URL.createObjectURL(video) : null;
       const currentSections = sectionsRef.current;
@@ -425,7 +461,7 @@ export function useRecorder() {
       setRetakeSectionId(null);
       await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembledVideoPath.current });
       return videoPath;
-    } finally { recorder.current = null; videoRecorder.current = null; timelineMutation.current = false; setProcessingStatus(null); }
+    } finally { recorder.current = null; videoRecorder.current = null; usingNativeCapture.current = false; activeSessionId.current = ""; timelineMutation.current = false; setProcessingStatus(null); }
   };
 
   const removeSection = async (id: string) => {

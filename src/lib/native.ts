@@ -92,6 +92,33 @@ export async function saveSession(folder: string | null, settingsFolder: string 
   return invoke<string | null>("save_session", { folder, settingsFolder, presentationFile, session, audioBytes, videoBytes });
 }
 
+export interface NativeCaptureRect { x: number; y: number; width: number; height: number }
+
+export async function nativeRecordingAvailable() {
+  if (!isTauri()) return false;
+  return invoke<boolean>("native_recording_available").catch(() => false);
+}
+
+export async function startNativeRecording(settingsFolder: string, sessionId: string, rect: NativeCaptureRect) {
+  return invoke("start_native_recording", { settingsFolder, sessionId, rect });
+}
+
+export async function pauseNativeRecording() {
+  return invoke("pause_native_recording");
+}
+
+export async function resumeNativeRecording() {
+  return invoke("resume_native_recording");
+}
+
+export async function stopNativeRecording() {
+  return invoke<string>("stop_native_recording");
+}
+
+export async function finalizeNativeRecording(settingsFolder: string, sessionId: string, capturePath: string) {
+  return invoke<string>("finalize_native_recording", { settingsFolder, sessionId, capturePath });
+}
+
 export async function assembleRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string) {
   if (!sources.length) return null;
   if (sources.length === 1) return sources[0];
