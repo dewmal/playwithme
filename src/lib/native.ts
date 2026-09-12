@@ -154,6 +154,18 @@ export async function exportVideo(source: string, presentationFile: string | nul
   return true;
 }
 
+export async function exportRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string, presentationFile: string | null) {
+  if (!isTauri()) return null;
+  if (!sources.length) throw new Error("Record at least one section before exporting");
+  const filename = exportFilename(presentationFile, "mp4");
+  const output = await save({ title: "Export session video", defaultPath: filename, filters: [{ name: "MP4 video", extensions: ["mp4"] }] });
+  if (!output) return null;
+  const assembled = await assembleRecordingSections(settingsFolder, sources, timelineId);
+  if (!assembled) throw new Error("The recording sections could not be combined");
+  await invoke("copy_video", { source: assembled, target: output });
+  return assembled;
+}
+
 export async function choosePdfPath(presentationFile: string | null) {
   if (!isTauri()) return null;
   return save({ title: "Export presentation", defaultPath: exportFilename(presentationFile, "pdf"), filters: [{ name: "PDF", extensions: ["pdf"] }] });

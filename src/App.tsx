@@ -77,7 +77,7 @@ export default function App() {
     } catch (error) { notify(error instanceof Error ? error.message : "Microphone access was not granted", 8000); }
   };
   const stopRecording = async () => { try { const videoPath = await recorder.stop(); notify(videoPath ? "Section saved to the timeline" : "No video was captured"); } catch (error) { notify(error instanceof Error ? error.message : String(error), 8000); } };
-  const finishRecording = () => { recorder.cancelMicrophoneSetup(); setPresenterView(false); notify(recorder.lastVideoPath ? "Timeline recording ready to export" : "Recording view closed"); };
+  const finishRecording = () => { recorder.cancelMicrophoneSetup(); setPresenterView(false); notify(recorder.sections.length ? "Recording sections ready to export" : "Recording view closed"); };
   const togglePresent = async () => { const presenting = store.mode === "present"; store.setMode(presenting ? "edit" : "present"); if (!presenting) await document.documentElement.requestFullscreen?.().catch(() => undefined); else if (document.fullscreenElement) await document.exitFullscreen(); };
 
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function App() {
         </div>
       </footer>
     </main>
-    {exportOpen && <ExportDialog close={() => setExportOpen(false)} videoPath={recorder.lastVideoPath} processingStatus={recorder.processingStatus} />}
+    {exportOpen && <ExportDialog close={() => setExportOpen(false)} sectionCount={recorder.sections.length} processingStatus={recorder.processingStatus} exportRecording={recorder.exportRecording} />}
     {helpOpen && <HelpDialog close={() => setHelpOpen(false)} />}
     {picker && <PresentationPicker folder={picker.folder} presentations={picker.presentations} current={store.folder === picker.folder ? store.presentationFile : null} close={() => setPicker(null)} select={(name) => loadDeck(picker.folder, picker.settingsFolder, name, picker.presentations).catch((error) => notify(error instanceof Error ? error.message : String(error), 6000))} />}
     {microphoneOpen && <MicrophoneDialog microphones={recorder.microphones} selectedDeviceId={recorder.selectedDeviceId} selectedDeviceLabel={recorder.selectedDeviceLabel} waveform={recorder.waveform} inputLevel={recorder.inputLevel} cameras={recorder.cameras} selectedCameraId={recorder.selectedCameraId} selectedCameraLabel={recorder.selectedCameraLabel} cameraStream={recorder.cameraStream} cameraEnabled={recorder.cameraEnabled} cameraLayout={recorder.cameraLayout} cameraPermission={recorder.cameraPermission} cameraError={recorder.cameraError} permission={recorder.microphonePermission} error={recorder.microphoneError} busy={!!recorder.processingStatus} close={closeMicrophoneSetup} select={(deviceId) => recorder.selectMicrophone(deviceId).catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} selectCamera={(deviceId) => recorder.selectCamera(deviceId).catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} toggleCamera={() => recorder.toggleCamera().catch((error) => notify(error instanceof Error ? error.message : String(error), 8000))} setCameraLayout={recorder.setCameraLayout} retry={requestMicrophone} openSettings={showMicrophoneSettings} openRecordingView={openRecordingView} />}
