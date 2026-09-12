@@ -1,4 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CellOutput, Drawing, RecordingSection, SessionData } from "../types";
 
@@ -119,11 +119,13 @@ export async function finalizeNativeRecording(settingsFolder: string, sessionId:
   return invoke<string>("finalize_native_recording", { settingsFolder, sessionId, capturePath });
 }
 
-export async function assembleRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string) {
+export async function assembleRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string, totalDuration = 0, onProgress?: (percent: number) => void) {
   if (!sources.length) return null;
   if (sources.length === 1) return sources[0];
   if (!settingsFolder || !isTauri()) return sources.at(-1) ?? null;
-  return invoke<string>("assemble_recording_sections", { settingsFolder, sources, timelineId });
+  const progress = new Channel<number>();
+  progress.onmessage = (percent) => onProgress?.(percent);
+  return invoke<string>("assemble_recording_sections", { settingsFolder, sources, timelineId, totalDuration, onProgress: progress });
 }
 
 export async function loadRecordingTimeline(settingsFolder: string | null, presentationFile: string | null): Promise<RecordingTimeline | null> {
@@ -177,19 +179,27 @@ export async function exportVideo(source: string, presentationFile: string | nul
   const filename = exportFilename(presentationFile, "mp4");
   const output = await save({ title: "Export session video", defaultPath: filename, filters: [{ name: "MP4 video", extensions: ["mp4"] }] });
   if (!output) return false;
-  await invoke("copy_video", { source, target: output });
+  await invoke("copy_video", { source, target: output, onProgress: new Channel<number>() });
   return true;
 }
 
-export async function exportRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string, presentationFile: string | null) {
+export async function exportRecordingSections(settingsFolder: string | null, sources: string[], timelineId: string, presentationFile: string | null, totalDuration: number, onProgress?: (percent: number, label: string) => void) {
   if (!isTauri()) return null;
   if (!sources.length) throw new Error("Record at least one section before exporting");
   const filename = exportFilename(presentationFile, "mp4");
+  onProgress?.(5, "Choosing export location…");
   const output = await save({ title: "Export session video", defaultPath: filename, filters: [{ name: "MP4 video", extensions: ["mp4"] }] });
   if (!output) return null;
-  const assembled = await assembleRecordingSections(settingsFolder, sources, timelineId);
+  onProgress?.(15, sources.length > 1 ? "Combining recording sections…" : "Preparing recording…");
+  const assembled = await assembleRecordingSections(settingsFolder, sources, timelineId, totalDuration, (percent) => {
+    onProgress?.(15 + Math.round(percent * .65), "Combining recording sections…");
+  });
   if (!assembled) throw new Error("The recording sections could not be combined");
-  await invoke("copy_video", { source: assembled, target: output });
+  onProgress?.(80, "Copying video…");
+  const copyProgress = new Channel<number>();
+  copyProgress.onmessage = (percent) => onProgress?.(80 + Math.round(percent * .15), "Copying video…");
+  await invoke("copy_video", { source: assembled, target: output, onProgress: copyProgress });
+  onProgress?.(95, "Saving recording details…");
   return assembled;
 }
 

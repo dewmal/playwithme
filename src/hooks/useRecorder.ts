@@ -522,19 +522,21 @@ export function useRecorder() {
     store.goTo(section.slide, section.step);
   };
 
-  const exportRecording = async () => {
+  const exportRecording = async (onProgress?: (percent: number, label: string) => void) => {
     if (timelineMutation.current) throw new Error("Wait for the recording timeline to finish updating");
     const current = useAppStore.getState();
     const sources = sectionsRef.current.flatMap((section) => section.videoPath ? [section.videoPath] : []);
+    const totalDuration = sectionsRef.current.reduce((total, section) => total + section.duration, 0);
     if (!sources.length) throw new Error("Record at least one section before exporting");
     if (sources.length !== sectionsRef.current.length) throw new Error("One or more recording sections are unavailable");
     timelineMutation.current = true;
     setProcessingStatus(sources.length > 1 ? "Combining recording sections…" : "Preparing recording export…");
     try {
-      const assembled = await exportRecordingSections(current.settingsFolder, sources, timelineId.current, current.presentationFile);
+      const assembled = await exportRecordingSections(current.settingsFolder, sources, timelineId.current, current.presentationFile, totalDuration, onProgress);
       if (!assembled) return false;
       assembledVideoPath.current = assembled;
       await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: sectionsRef.current, recordingFiles: recordingFiles.current, videoPath: assembled, videoSources: sources });
+      onProgress?.(100, "Video export complete");
       return true;
     } finally {
       timelineMutation.current = false;

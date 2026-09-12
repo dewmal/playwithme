@@ -1,13 +1,14 @@
 use serde_json::{Map, Value, json};
 use std::{
     collections::hash_map::DefaultHasher,
-    fs,
+    fs::{self, File},
     hash::{Hash, Hasher},
+    io::{BufRead, BufReader, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Mutex, OnceLock},
 };
-use tauri::Manager;
+use tauri::{Manager, ipc::Channel};
 
 const APP_DIRECTORY: &str = ".presenta";
 
@@ -866,10 +867,32 @@ fn clear_recording_timeline(
 }
 
 #[tauri::command]
-fn assemble_recording_sections(
+async fn assemble_recording_sections(
     settings_folder: String,
     sources: Vec<String>,
     timeline_id: String,
+    total_duration: f64,
+    on_progress: Channel<u8>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        assemble_recording_sections_blocking(
+            settings_folder,
+            sources,
+            timeline_id,
+            total_duration,
+            on_progress,
+        )
+    })
+    .await
+    .map_err(|error| format!("Recording export task failed: {error}"))?
+}
+
+fn assemble_recording_sections_blocking(
+    settings_folder: String,
+    sources: Vec<String>,
+    timeline_id: String,
+    total_duration: f64,
+    on_progress: Channel<u8>,
 ) -> Result<String, String> {
     if sources.is_empty() {
         return Err("The recording timeline has no sections".into());
@@ -933,11 +956,48 @@ fn assemble_recording_sections(
                 "192k",
                 "-movflags",
                 "+faststart",
+                "-progress",
+                "pipe:1",
+                "-nostats",
             ])
             .arg(&pending_output)
-            .status()
+            .stdout(Stdio::piped())
+            .spawn()
         {
-            Ok(status) if status.success() => {
+            Ok(mut child) => {
+                let mut last_progress = 0;
+                if let Some(stdout) = child.stdout.take() {
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        let Some(value) = line
+                            .strip_prefix("out_time_us=")
+                            .or_else(|| line.strip_prefix("out_time_ms="))
+                        else {
+                            continue;
+                        };
+                        let Ok(elapsed_us) = value.parse::<f64>() else {
+                            continue;
+                        };
+                        let percent = if total_duration > 0.0 {
+                            ((elapsed_us / (total_duration * 1_000_000.0)) * 100.0)
+                                .round()
+                                .clamp(0.0, 99.0) as u8
+                        } else {
+                            0
+                        };
+                        if percent > last_progress {
+                            last_progress = percent;
+                            let _ = on_progress.send(percent);
+                        }
+                    }
+                }
+                let status = child
+                    .wait()
+                    .map_err(|error| format!("FFmpeg could not finish: {error}"))?;
+                if !status.success() {
+                    last_error = "FFmpeg failed to assemble the recording sections".into();
+                    break;
+                }
+                let _ = on_progress.send(100);
                 let _ = fs::remove_file(&list_path);
                 #[cfg(target_os = "windows")]
                 if output.exists() {
@@ -947,10 +1007,6 @@ fn assemble_recording_sections(
                     format!("Could not publish the assembled recording: {error}")
                 })?;
                 return Ok(output.to_string_lossy().into_owned());
-            }
-            Ok(_) => {
-                last_error = "FFmpeg failed to assemble the recording sections".into();
-                break;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
@@ -974,7 +1030,21 @@ fn write_binary(path: String, bytes: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_video(source: String, target: String) -> Result<(), String> {
+async fn copy_video(
+    source: String,
+    target: String,
+    on_progress: Channel<u8>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || copy_video_blocking(source, target, on_progress))
+        .await
+        .map_err(|error| format!("Video copy task failed: {error}"))?
+}
+
+fn copy_video_blocking(
+    source: String,
+    target: String,
+    on_progress: Channel<u8>,
+) -> Result<(), String> {
     let source = PathBuf::from(source);
     let target = PathBuf::from(target);
     let is_mp4 = |path: &Path| {
@@ -986,11 +1056,45 @@ fn copy_video(source: String, target: String) -> Result<(), String> {
         return Err("Expected an existing MP4 recording and an MP4 destination".into());
     }
     if source == target {
+        let _ = on_progress.send(100);
         return Ok(());
     }
-    fs::copy(source, target)
-        .map(|_| ())
-        .map_err(|e| format!("Could not export the video: {e}"))
+    let total = source
+        .metadata()
+        .map_err(|e| format!("Could not read the video: {e}"))?
+        .len();
+    let mut input = File::open(source).map_err(|e| format!("Could not open the video: {e}"))?;
+    let mut output =
+        File::create(target).map_err(|e| format!("Could not create the exported video: {e}"))?;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    let mut copied = 0_u64;
+    let mut last_progress = 0_u8;
+    loop {
+        let count = input
+            .read(&mut buffer)
+            .map_err(|e| format!("Could not read the video: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..count])
+            .map_err(|e| format!("Could not export the video: {e}"))?;
+        copied += count as u64;
+        let percent = if total == 0 {
+            100
+        } else {
+            ((copied * 100) / total).min(100) as u8
+        };
+        if percent > last_progress {
+            last_progress = percent;
+            let _ = on_progress.send(percent);
+        }
+    }
+    output
+        .flush()
+        .map_err(|e| format!("Could not finish the video export: {e}"))?;
+    let _ = on_progress.send(100);
+    Ok(())
 }
 
 #[tauri::command]
