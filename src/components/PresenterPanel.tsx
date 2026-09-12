@@ -22,10 +22,11 @@ interface PresenterPanelProps {
   removeSection: (id: string) => void;
   replaySection: (id: string) => Promise<string | null>;
   clearSections: () => void;
+  cleanPresentation: () => void;
   retakeSection: (id: string) => void;
 }
 
-export function PresenterPanel({ elapsed, paused, recording, processing, microphone, inputLevel, sections, retakeSectionId, close, removeSection, replaySection, clearSections, retakeSection }: PresenterPanelProps) {
+export function PresenterPanel({ elapsed, paused, recording, processing, microphone, inputLevel, sections, retakeSectionId, close, removeSection, replaySection, clearSections, cleanPresentation, retakeSection }: PresenterPanelProps) {
   const { slides, slideIndex, theme } = useAppStore();
   const [playingSectionId, setPlayingSectionId] = useState<string | null>(null);
   const [playingPreviewUrl, setPlayingPreviewUrl] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export function PresenterPanel({ elapsed, paused, recording, processing, microph
     </section>
 
     <section className="recording-timeline" aria-label="Recording timeline">
-      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording || processing}>Clear all</button>}</span></div>
+      <div className="timeline-heading"><h2>Recording timeline</h2><span className="timeline-summary"><span>{sections.length} {sections.length === 1 ? "section" : "sections"}</span>{sections.length > 0 && <button onClick={() => { if (window.confirm("Permanently delete every recording for this presentation?")) clearSections(); }} disabled={recording || processing}>Clear recordings</button>}<button className="clean-presentation" onClick={() => { if (window.confirm("Clean this presentation? This permanently deletes all drawings, code outputs, and recorded videos.")) cleanPresentation(); }} disabled={recording || processing}>Clean presentation</button></span></div>
       {sections.length ? <div className="timeline-sections">{sections.map((section, index) => <article className={retakeSectionId === section.id ? "selected" : ""} key={section.id}>
         <span className="section-index">{index + 1}</span>
         <div><b>Section {index + 1}</b><small>Slide {section.slide + 1} · {clock(section.duration)}</small></div>

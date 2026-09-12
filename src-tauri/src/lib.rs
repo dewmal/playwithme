@@ -1,4 +1,4 @@
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::{
     collections::hash_map::DefaultHasher,
     fs,
@@ -345,6 +345,15 @@ fn save_presentation(
     fs::write(app.join("drawings.json"), json).map_err(|e| e.to_string())?;
     let outputs_dir = app.join("outputs");
     fs::create_dir_all(&outputs_dir).map_err(|e| e.to_string())?;
+    // Keep the on-disk output set in sync with the current presentation state.
+    // Without removing old files first, clearing an output in the UI only hides
+    // it until the presentation is reopened and load_outputs reads it again.
+    for entry in fs::read_dir(&outputs_dir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|value| value.to_str()) == Some("json") {
+            fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
     if let Some(items) = outputs.as_object() {
         for (cell_id, output) in items {
             let safe_id: String = cell_id

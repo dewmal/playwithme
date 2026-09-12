@@ -16,9 +16,15 @@ export function CodeCell({ id, initialCode, theme }: Props) {
 
   useEffect(() => setCode(initialCode.trim()), [initialCode]);
   const run = async () => {
+    const outputRevision = useAppStore.getState().outputRevision;
     setRunning(true); addEvent({ type: "run-cell", cell: id });
-    try { setOutput(await pythonKernel.run(id, code)); }
-    catch (error) { setOutput({ cellId: id, kind: "error", data: String(error), timestamp: Date.now() }); }
+    try {
+      const result = await pythonKernel.run(id, code);
+      if (useAppStore.getState().outputRevision === outputRevision) setOutput(result);
+    }
+    catch (error) {
+      if (useAppStore.getState().outputRevision === outputRevision) setOutput({ cellId: id, kind: "error", data: String(error), timestamp: Date.now() });
+    }
     finally { setRunning(false); }
   };
 
