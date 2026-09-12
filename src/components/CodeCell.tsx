@@ -2,15 +2,71 @@ import { useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { Check, LoaderCircle, Play, TriangleAlert } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { pythonKernel } from "../lib/python";
 import { useAppStore } from "../store";
 
 interface Props { id: string; slideId: string; initialCode: string; theme: "light" | "dark" }
 
-function findInputPrompts(code: string) {
+function skipPythonString(code: string, start: number) {
+  const quote = code[start];
+  const triple = code.slice(start, start + 3) === quote.repeat(3);
+  const delimiterLength = triple ? 3 : 1;
+  let index = start + delimiterLength;
+  while (index < code.length) {
+    if (code[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (code.slice(index, index + delimiterLength) === quote.repeat(delimiterLength)) {
+      return index + delimiterLength;
+    }
+    index += 1;
+  }
+  return code.length;
+}
+
+function literalPrompt(code: string, start: number) {
+  let index = start;
+  while (/\s/.test(code[index] ?? "")) index += 1;
+  const prefixStart = index;
+  while (/[a-z]/i.test(code[index] ?? "") && index - prefixStart < 2) index += 1;
+  if (code[index] !== "'" && code[index] !== '"') index = prefixStart;
+  if (code[index] !== "'" && code[index] !== '"') return null;
+  const contentStart = index + (code.slice(index, index + 3) === code[index].repeat(3) ? 3 : 1);
+  const end = skipPythonString(code, index);
+  const delimiterLength = contentStart - index;
+  return code.slice(contentStart, Math.max(contentStart, end - delimiterLength));
+}
+
+export function findInputPrompts(code: string) {
   const prompts: string[] = [];
-  const pattern = /\binput\s*\(\s*(?:(["'])(.*?)\1\s*)?\)/g;
-  for (const match of code.matchAll(pattern)) prompts.push(match[2] || `Input ${prompts.length + 1}`);
+  let index = 0;
+  while (index < code.length) {
+    const character = code[index];
+    if (character === "#") {
+      const newline = code.indexOf("\n", index);
+      index = newline === -1 ? code.length : newline + 1;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      index = skipPythonString(code, index);
+      continue;
+    }
+    if (/[A-Za-z_]/.test(character)) {
+      const identifierStart = index;
+      while (/[A-Za-z0-9_]/.test(code[index] ?? "")) index += 1;
+      if (code.slice(identifierStart, index) !== "input") continue;
+      let open = index;
+      while (/\s/.test(code[open] ?? "")) open += 1;
+      const previous = code.slice(0, identifierStart).trimEnd().at(-1);
+      if (code[open] !== "(" || previous === ".") continue;
+      const prompt = literalPrompt(code, open + 1);
+      prompts.push(prompt || `Input ${prompts.length + 1}`);
+      continue;
+    }
+    index += 1;
+  }
   return prompts;
 }
 
@@ -22,6 +78,7 @@ export function CodeCell({ id, slideId, initialCode, theme }: Props) {
   const firstInputRef = useRef<HTMLInputElement>(null);
   const runRevision = useRef(0);
   const output = useAppStore((s) => s.outputs[id]);
+  const folder = useAppStore((s) => s.folder);
   const outputRevision = useAppStore((s) => s.outputRevision);
   const slideResetRevision = useAppStore((s) => s.slideResetRevisions[slideId] ?? 0);
   const setOutput = useAppStore((s) => s.setOutput);
@@ -41,7 +98,7 @@ export function CodeCell({ id, slideId, initialCode, theme }: Props) {
     const currentRun = ++runRevision.current;
     setAwaitingInput(false); setRunning(true); addEvent({ type: "run-cell", cell: id });
     try {
-      const result = await pythonKernel.run(id, code, inputs);
+      const result = await pythonKernel.run(id, code, inputs, folder);
       const current = useAppStore.getState();
       if (current.outputRevision === outputRevision && (current.slideResetRevisions[slideId] ?? 0) === slideResetRevision) setOutput(result);
     }
@@ -60,7 +117,7 @@ export function CodeCell({ id, slideId, initialCode, theme }: Props) {
   };
 
   return <div className={`code-cell code-theme-${theme}`} data-cell-id={id}>
-    <div className="cell-bar"><span><i /> Python</span><button onClick={run} disabled={running} title="Run cell (R)">
+    <div className="cell-bar"><span title={isTauri() ? "Native Python managed by uv" : "Browser Python powered by Pyodide"}><i /> {isTauri() ? "Python · uv" : "Python · browser"}</span><button onClick={run} disabled={running} title="Run cell (R)">
       {running ? <LoaderCircle className="spin" /> : <Play />} {running ? "Running…" : awaitingInput ? "Continue" : "Run"}
     </button></div>
     <CodeMirror value={code} onChange={setCode} extensions={[python()]} theme={theme} basicSetup={{ lineNumbers: true, foldGutter: false }} />

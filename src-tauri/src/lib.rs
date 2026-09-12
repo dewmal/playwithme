@@ -5,7 +5,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{BufRead, BufReader, Read, Write},
     path::{Component, Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Mutex, OnceLock},
 };
 use tauri::{Manager, ipc::Channel};
@@ -29,9 +29,228 @@ struct NativeRecording {
 }
 
 static NATIVE_RECORDING: OnceLock<Mutex<Option<NativeRecording>>> = OnceLock::new();
+static PYTHON_KERNEL: OnceLock<Mutex<Option<NativePythonKernel>>> = OnceLock::new();
+
+struct NativePythonKernel {
+    folder: PathBuf,
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+const PYTHON_KERNEL_SCRIPT: &str = r#"
+import ast, base64, builtins, contextlib, io, json, sys, traceback
+
+STATE = {"__name__": "__presenta__"}
+PROTOCOL_PRINT = print
+
+def run_cell(source, supplied_inputs):
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    input_values = iter(supplied_inputs)
+    original_input = builtins.input
+
+    def cell_input(prompt=""):
+        try:
+            value = next(input_values)
+        except StopIteration:
+            raise EOFError("No value was supplied for input(). Add it under Program input and run again.")
+        print(f"{prompt}{value}")
+        return value
+
+    try:
+        tree = ast.parse(source, mode="exec")
+        last = None
+        builtins.input = cell_input
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            if tree.body and isinstance(tree.body[-1], ast.Expr):
+                expression = tree.body.pop()
+                if tree.body:
+                    exec(compile(tree, "<presenta-cell>", "exec"), STATE, STATE)
+                last = eval(compile(ast.Expression(expression.value), "<presenta-cell>", "eval"), STATE, STATE)
+                STATE["_"] = last
+            else:
+                exec(compile(tree, "<presenta-cell>", "exec"), STATE, STATE)
+
+        text = stdout.getvalue() + stderr.getvalue()
+        if "matplotlib.pyplot" in sys.modules:
+            import matplotlib.pyplot as plt
+            if plt.get_fignums():
+                buffer = io.BytesIO()
+                plt.gcf().savefig(buffer, format="png", dpi=144, bbox_inches="tight", facecolor="white")
+                plt.close("all")
+                return {"kind": "image", "data": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")}
+        if last is not None:
+            if hasattr(last, "to_html"):
+                return {"kind": "html", "data": last.to_html()}
+            if hasattr(last, "_repr_html_"):
+                html = last._repr_html_()
+                if html:
+                    return {"kind": "html", "data": html}
+            text += repr(last)
+        return {"kind": "text", "data": text or "Done"}
+    except BaseException:
+        return {"kind": "error", "data": traceback.format_exc()}
+    finally:
+        builtins.input = original_input
+
+for line in sys.stdin:
+    try:
+        request = json.loads(line)
+        response = run_cell(request["code"], request.get("inputs", []))
+    except BaseException:
+        response = {"kind": "error", "data": traceback.format_exc()}
+    PROTOCOL_PRINT(json.dumps(response, ensure_ascii=False), flush=True)
+"#;
 
 fn native_recording_state() -> &'static Mutex<Option<NativeRecording>> {
     NATIVE_RECORDING.get_or_init(|| Mutex::new(None))
+}
+
+fn python_kernel_state() -> &'static Mutex<Option<NativePythonKernel>> {
+    PYTHON_KERNEL.get_or_init(|| Mutex::new(None))
+}
+
+fn uv_candidates() -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from("uv")];
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".local/bin/uv"));
+        candidates.push(home.join(".cargo/bin/uv"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/uv"));
+    candidates.push(PathBuf::from("/usr/local/bin/uv"));
+    candidates
+}
+
+fn start_python_kernel(folder: PathBuf) -> Result<NativePythonKernel, String> {
+    let mut last_error = None;
+    for uv in uv_candidates() {
+        let result = Command::new(&uv)
+            .args([
+                "--no-cache",
+                "run",
+                "python",
+                "-u",
+                "-c",
+                PYTHON_KERNEL_SCRIPT,
+            ])
+            .current_dir(&folder)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn();
+        match result {
+            Ok(mut child) => {
+                let stdin = child
+                    .stdin
+                    .take()
+                    .ok_or("Could not open the Python kernel input")?;
+                let stdout = child
+                    .stdout
+                    .take()
+                    .ok_or("Could not open the Python kernel output")?;
+                return Ok(NativePythonKernel {
+                    folder,
+                    child,
+                    stdin,
+                    stdout: BufReader::new(stdout),
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => last_error = Some(error),
+            Err(error) => {
+                return Err(format!(
+                    "Could not start Python with {}: {error}",
+                    uv.display()
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "uv was not found. Install uv and restart Presenta{}",
+        last_error
+            .map(|error| format!(": {error}"))
+            .unwrap_or_default()
+    ))
+}
+
+impl NativePythonKernel {
+    fn execute(&mut self, code: String, inputs: Vec<String>) -> Result<Value, String> {
+        let request = serde_json::to_string(&json!({ "code": code, "inputs": inputs }))
+            .map_err(|error| error.to_string())?;
+        self.stdin
+            .write_all(request.as_bytes())
+            .map_err(|error| format!("Python kernel input failed: {error}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .map_err(|error| format!("Python kernel input failed: {error}"))?;
+        self.stdin
+            .flush()
+            .map_err(|error| format!("Python kernel input failed: {error}"))?;
+        let mut response = String::new();
+        let bytes = self
+            .stdout
+            .read_line(&mut response)
+            .map_err(|error| format!("Python kernel output failed: {error}"))?;
+        if bytes == 0 {
+            return Err("The Python kernel stopped unexpectedly".into());
+        }
+        let value: Value = serde_json::from_str(&response)
+            .map_err(|error| format!("Python returned an invalid response: {error}"))?;
+        if !matches!(
+            value.get("kind").and_then(Value::as_str),
+            Some("text" | "html" | "image" | "error")
+        ) || value.get("data").and_then(Value::as_str).is_none()
+        {
+            return Err("Python returned an invalid cell result".into());
+        }
+        Ok(value)
+    }
+}
+
+#[tauri::command]
+async fn run_python_cell(
+    folder: String,
+    code: String,
+    inputs: Vec<String>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let folder = ensure_folder(&folder)?
+            .canonicalize()
+            .map_err(|error| format!("Could not resolve the presentation folder: {error}"))?;
+        let mut state = python_kernel_state()
+            .lock()
+            .map_err(|_| "Python kernel state is unavailable")?;
+        let should_restart = match state.as_mut() {
+            Some(kernel) if kernel.folder == folder => kernel
+                .child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+                .is_some(),
+            Some(_) => true,
+            None => false,
+        };
+        if should_restart {
+            if let Some(mut kernel) = state.take() {
+                let _ = kernel.child.kill();
+            }
+        }
+        if state.is_none() {
+            *state = Some(start_python_kernel(folder)?);
+        }
+        let result = state
+            .as_mut()
+            .expect("kernel was initialized")
+            .execute(code, inputs);
+        if result.is_err() {
+            if let Some(mut kernel) = state.take() {
+                let _ = kernel.child.kill();
+            }
+        }
+        result
+    })
+    .await
+    .map_err(|error| format!("Python execution task failed: {error}"))?
 }
 
 fn ensure_app_layout(app: &Path, root: &Path) -> Result<PathBuf, String> {
@@ -1158,6 +1377,7 @@ pub fn run() {
             create_presentation,
             save_presentation,
             save_session,
+            run_python_cell,
             native_recording_available,
             start_native_recording,
             pause_native_recording,
@@ -1176,4 +1396,39 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Presenta");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_python_kernel_preserves_state_and_supplies_input() {
+        let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut kernel = start_python_kernel(folder).expect("uv should start Python");
+
+        let assigned = kernel
+            .execute("answer = 40".into(), vec![])
+            .expect("assignment should run");
+        assert_eq!(assigned["kind"], "text");
+
+        let result = kernel
+            .execute("answer + int(input('Add: '))".into(), vec!["2".into()])
+            .expect("a later cell should see state from an earlier cell");
+        assert_eq!(result["kind"], "text");
+        assert_eq!(result["data"], "Add: 2\n42");
+
+        let error = kernel
+            .execute("raise ValueError('expected')".into(), vec![])
+            .expect("Python exceptions are cell results, not protocol failures");
+        assert_eq!(error["kind"], "error");
+        assert!(
+            error["data"]
+                .as_str()
+                .unwrap()
+                .contains("ValueError: expected")
+        );
+
+        let _ = kernel.child.kill();
+    }
 }
