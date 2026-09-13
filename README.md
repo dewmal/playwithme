@@ -22,6 +22,8 @@ slides, record your delivery, and export the result.
 - **Persistent Python cells** powered by the opened project's `uv` environment in
   the desktop app, with a Pyodide fallback in the browser.
 - **Animated ECharts** configured directly from fenced JSON blocks.
+- **Controllable YouTube embeds** with seek, mute, fill-slide, and fullscreen
+  controls for live presentations and desktop recordings.
 - **Presentation ink** with pen, highlighter, laser, arrows, shapes, text, eraser,
   undo, and redo tools.
 - **Presenter recording** with narration, optional camera overlay, private speaker

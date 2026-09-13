@@ -175,6 +175,26 @@ Use Markdown link syntax:
 [Visit the project website](https://example.com)
 ```
 
+## Embed a YouTube video
+
+Place a YouTube URL in a `youtube` directive on its own line:
+
+```md
+# Product demonstration
+
+@[youtube](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+```
+
+Standard YouTube watch URLs, Shorts URLs, `youtu.be` links, and URLs with a start time are supported. You can also use a fenced block:
+
+````md
+```youtube
+https://youtu.be/dQw4w9WgXcQ?t=30s
+```
+````
+
+The player includes play, pause, restart, 10-second seek, mute, fill-slide, and fullscreen controls. Use **Fill slide** while recording so the video stays inside the captured slide area. Internet access is required. Embedded video visuals are captured by the macOS desktop recorder; PDF export uses the video's preview image instead of live playback. Presenta records microphone narration, but it does not add YouTube's audio track directly to the exported recording.
+
 ## Add a table
 
 Use a table when values need to be compared:

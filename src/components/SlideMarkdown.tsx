@@ -7,9 +7,12 @@ import { slideContentBlocks } from "../lib/slides";
 
 export function SlideMarkdown({ markdown, components, rich = true }: { markdown: string; components?: Components; rich?: boolean }) {
   const blocks = slideContentBlocks(markdown);
-  const renderMarkdown = (source: string, key: string) => rich
-    ? <ReactMarkdown key={key} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{source}</ReactMarkdown>
-    : <ReactMarkdown key={key} remarkPlugins={[remarkGfm]} components={components}>{source}</ReactMarkdown>;
+  const renderMarkdown = (source: string, key: string) => {
+    const withVideoEmbeds = source.replace(/^\s*@\[youtube\]\((https?:\/\/[^\s)]+)\)\s*$/gim, "```youtube\n$1\n```");
+    return rich
+      ? <ReactMarkdown key={key} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{withVideoEmbeds}</ReactMarkdown>
+      : <ReactMarkdown key={key} remarkPlugins={[remarkGfm]} components={components}>{withVideoEmbeds}</ReactMarkdown>;
+  };
 
   return <>{blocks.map((block, blockIndex) => block.type === "markdown"
     ? renderMarkdown(block.markdown, `markdown-${blockIndex}`)
