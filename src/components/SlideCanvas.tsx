@@ -51,6 +51,7 @@ function ProjectImage({ src, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
 function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: CameraLayout; move: (layout: CameraLayout) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const resizeStart = useRef({ clientX: 0, size: 0, slideWidth: 1 });
   useEffect(() => {
     if (!video.current) return;
     video.current.srcObject = stream;
@@ -79,7 +80,26 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     event.preventDefault();
     move({ ...layout, x: layout.x + offset[0], y: layout.y + offset[1] });
   };
-  return <div className="camera-preview" style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%` }} role="button" tabIndex={0} aria-label="Move camera preview" title="Drag to move camera" onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline /><span>Drag to move</span></div>;
+  const beginResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const slide = event.currentTarget.parentElement?.parentElement;
+    if (!slide) return;
+    event.stopPropagation();
+    resizeStart.current = { clientX: event.clientX, size: layout.size, slideWidth: slide.getBoundingClientRect().width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const resize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    move({ ...layout, size: resizeStart.current.size + (event.clientX - resizeStart.current.clientX) / resizeStart.current.slideWidth });
+  };
+  const resizeWithKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const direction = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    move({ ...layout, size: layout.size + direction * (event.shiftKey ? 0.04 : 0.01) });
+  };
+  return <div className="camera-preview" style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%` }} role="button" tabIndex={0} aria-label="Move camera preview" title="Drag to move camera" onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline /><span>Drag to move · resize from the corner</span><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>;
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {

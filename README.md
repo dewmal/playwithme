@@ -155,7 +155,7 @@ separate timeline, narration, frozen output, drawing, and optional visual-captur
 data. Recording setup includes camera and microphone previews, device selection,
 and camera position and size controls.
 
-The mirrored camera preview can be moved while recording and is composited at the
+The mirrored camera preview can be moved and resized while recording and is composited at the
 same location in the export. Presenter view shows private speaker notes, a timer,
 and a next-slide preview; it is never included in the captured video. Paused time
 is excluded from audio, video, events, and total duration. Each stopped recording

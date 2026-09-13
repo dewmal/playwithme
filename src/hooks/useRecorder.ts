@@ -13,6 +13,8 @@ const VIDEO_SIZES: Record<RecordingAspectRatio, { width: number; height: number 
 const VIDEO_BIT_RATE = 8_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
 const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 };
+const MIN_CAMERA_SIZE = 0.05;
+const MAX_CAMERA_SIZE = 1;
 
 export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null);
@@ -219,7 +221,7 @@ export function useRecorder() {
   };
 
   const setCameraLayout = (layout: CameraLayout) => {
-    const size = Math.min(0.34, Math.max(0.14, layout.size));
+    const size = Math.min(MAX_CAMERA_SIZE, Math.max(MIN_CAMERA_SIZE, layout.size));
     const next = {
       size,
       x: Math.min(1 - size, Math.max(0, layout.x)),

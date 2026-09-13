@@ -80,8 +80,8 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
         </div></div>
         <div><span><Maximize2 /> Size</span><div className="camera-size-options">
           {([{ label: "Small", size: 0.14 }, { label: "Medium", size: 0.1875 }, { label: "Large", size: 0.28 }] as const).map((option) => <button type="button" key={option.label} className={Math.abs(cameraLayout.size - option.size) < 0.02 ? "active" : ""} onClick={() => cameraSize(option.size)}>{option.label}</button>)}
-        </div></div>
-        <small>You can drag the camera directly on the slide after recording starts.</small>
+        </div><label className="camera-size-slider"><input type="range" min="5" max="100" step="1" value={Math.round(cameraLayout.size * 100)} onChange={(event) => cameraSize(Number(event.target.value) / 100)} aria-label="Camera size" /><output>{Math.round(cameraLayout.size * 100)}%</output></label></div>
+        <small>You can drag or resize the camera directly on the slide after recording starts.</small>
       </div>}
 
       <label className="microphone-select-label" htmlFor="microphone-select"><Mic /> Microphone</label>
