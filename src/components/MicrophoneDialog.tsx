@@ -1,4 +1,4 @@
-import { AudioLines, Camera, ExternalLink, Maximize2, Mic, Move, PanelRight, RotateCcw, Shapes, ShieldAlert, VideoOff, X } from "lucide-react";
+import { AudioLines, Camera, Columns2, ExternalLink, Maximize2, Mic, Move, PanelRight, RotateCcw, Shapes, ShieldAlert, VideoOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CameraLayout, CameraShape } from "../types";
 
@@ -80,6 +80,10 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
       </select></>}
 
       {cameraEnabled && <div className="camera-layout-controls">
+        <div className="camera-setup-layout-choice"><span><Columns2 /> Layout</span><div>
+          <button type="button" className={cameraLayout.mode === "overlay" ? "active" : ""} onClick={() => setCameraLayout({ ...cameraLayout, mode: "overlay" })}>Overlay</button>
+          <button type="button" className={cameraLayout.mode === "split" ? "active" : ""} onClick={() => setCameraLayout({ ...cameraLayout, mode: "split" })}>Split view</button>
+        </div></div>
         <div><span><Move /> Position</span><div className="camera-position-grid">
           {(["top-left", "top-right", "bottom-left", "bottom-right"] as const).map((position) => {
             const [vertical, horizontal] = position.split("-") as ["top" | "bottom", "left" | "right"];

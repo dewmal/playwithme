@@ -82,7 +82,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     };
   }, [shapeMenu]);
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || layout.mode === "split") return;
     const slide = event.currentTarget.parentElement;
     if (!slide) return;
     const bounds = slide.getBoundingClientRect();
@@ -97,6 +97,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     move({ ...layout, x: (event.clientX - bounds.left) / bounds.width - dragOffset.current.x, y: (event.clientY - bounds.top) / bounds.height - dragOffset.current.y });
   };
   const nudge = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (layout.mode === "split") return;
     const amount = event.shiftKey ? 0.025 : 0.008;
     const offsets: Partial<Record<string, [number, number]>> = { ArrowLeft: [-amount, 0], ArrowRight: [amount, 0], ArrowUp: [0, -amount], ArrowDown: [0, amount] };
     const offset = offsets[event.key];
@@ -135,8 +136,13 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     move({ ...layout, x: 0, y: 0, size: 1 });
   };
   return <>
-    <div className={`camera-preview camera-shape-${layout.shape}`} style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%`, ...(layout.shape === "freeform" ? { aspectRatio: String(layout.customAspectRatio), borderRadius: `${layout.cornerRadius * 100}%` } : {}) }} role="button" tabIndex={0} aria-label="Move camera preview; right click to crop or change shape" title="Drag to move · right click to crop or change shape" onContextMenu={(event) => { event.preventDefault(); setShapeMenu({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - 236)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 450)) }); }} onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline style={{ objectPosition: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%`, transform: `scaleX(-1) scale(${layout.zoom})`, transformOrigin: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%` }} /><span>Drag frame · right click to crop</span><button type="button" className="camera-fit-toggle" aria-label={fittedToScreen ? "Restore previous camera size" : "Fit camera to screen"} title={fittedToScreen ? "Restore previous size" : "Fit to screen"} onPointerDown={(event) => event.stopPropagation()} onClick={toggleFit}>{fittedToScreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>
+    <div className={`camera-preview camera-shape-${layout.shape} camera-layout-${layout.mode}`} style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%`, ...(layout.shape === "freeform" ? { aspectRatio: String(layout.customAspectRatio), borderRadius: `${layout.cornerRadius * 100}%` } : {}) }} role="button" tabIndex={0} aria-label="Move camera preview; right click to change its layout or crop" title={layout.mode === "split" ? "Dedicated camera pane · right click for layout" : "Drag to move · right click to crop or change shape"} onContextMenu={(event) => { event.preventDefault(); setShapeMenu({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - 236)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 520)) }); }} onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline style={{ objectPosition: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%`, transform: `scaleX(-1) scale(${layout.zoom})`, transformOrigin: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%` }} /><span>{layout.mode === "split" ? "Camera pane · right click for layout" : "Drag frame · right click to crop"}</span><button type="button" className="camera-fit-toggle" aria-label={fittedToScreen ? "Restore previous camera size" : "Fit camera to screen"} title={fittedToScreen ? "Restore previous size" : "Fit to screen"} onPointerDown={(event) => event.stopPropagation()} onClick={toggleFit}>{fittedToScreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>
     {shapeMenu && <div className="camera-shape-menu" role="menu" aria-label="Camera shape" style={{ left: shapeMenu.x, top: shapeMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+      <strong>Presentation layout</strong>
+      <div className="camera-layout-mode" role="group" aria-label="Camera layout">
+        <button type="button" className={layout.mode === "overlay" ? "active" : ""} onClick={() => move({ ...layout, mode: "overlay" })}>Overlay</button>
+        <button type="button" className={layout.mode === "split" ? "active" : ""} onClick={() => move({ ...layout, mode: "split" })}>Split view</button>
+      </div>
       <strong>Camera shape</strong>
       {shapes.map((shape) => <button type="button" role="menuitemradio" aria-checked={layout.shape === shape.value} className={layout.shape === shape.value ? "active" : ""} key={shape.value} onClick={() => move({ ...layout, shape: shape.value })}><i className={`shape-${shape.value}`} /><span>{shape.label}</span></button>)}
       <div className="camera-crop-controls">
@@ -204,11 +210,22 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   };
 
   return <div className="stage-shell">
-    <article className={`slide-canvas ${backgroundTone(slide?.background)} code-theme-${resolvedCodeTheme}`} style={slideThemeStyle(slide)} data-slide-index={slideIndex} onContextMenu={openMenu}>
-      <div className="slide-accent" />
-      <div className="slide-content"><SlideMarkdown markdown={markdown} components={components} /></div>
-      <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>
-      <DrawingLayer />
+    <article className={`slide-canvas ${cameraLayout?.mode === "split" && showCamera ? "camera-split-view" : ""} ${backgroundTone(slide?.background)} code-theme-${resolvedCodeTheme}`} style={slideThemeStyle(slide)} data-slide-index={slideIndex} onContextMenu={openMenu}>
+      <div className="slide-pane" onWheel={(event) => {
+        if (cameraLayout?.mode !== "split") return;
+        const pane = event.currentTarget;
+        if (pane.scrollWidth > pane.clientWidth && pane.scrollHeight <= pane.clientHeight + 1) {
+          event.preventDefault();
+          pane.scrollLeft += event.deltaY || event.deltaX;
+        }
+      }}>
+        <div className="slide-surface">
+          <div className="slide-accent" />
+          <div className="slide-content"><SlideMarkdown markdown={markdown} components={components} /></div>
+          <div className="slide-folio">{String(slideIndex + 1).padStart(2, "0")} <span>/</span> {String(slides.length).padStart(2, "0")}</div>
+          <DrawingLayer />
+        </div>
+      </div>
       {!exportMode && showCamera && cameraStream && cameraLayout && moveCamera && <CameraPreview stream={cameraStream} layout={cameraLayout} move={moveCamera} />}
     </article>
     {menu && <div className="slide-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(event) => event.stopPropagation()}><button role="menuitem" onClick={applyToAll}><Paintbrush /><span><b>Apply theme to all slides</b><small>Copy fonts, colors, background, and code style</small></span></button></div>}

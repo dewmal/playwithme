@@ -35,12 +35,14 @@ export interface RecordingSection {
 
 export type RecordingAspectRatio = "16:9" | "4:3" | "1:1" | "9:16";
 export type CameraShape = "rectangle" | "rounded" | "pill" | "circle" | "portrait" | "freeform";
+export type CameraLayoutMode = "overlay" | "split";
 
 export interface CameraLayout {
   /** Normalized against the slide, so preview and recorded output stay aligned. */
   x: number;
   y: number;
   size: number;
+  mode: CameraLayoutMode;
   shape: CameraShape;
   /** Camera crop controls. Values are normalized except zoom, which starts at 1. */
   zoom: number;

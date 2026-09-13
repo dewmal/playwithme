@@ -13,7 +13,7 @@ const VIDEO_SIZES: Record<RecordingAspectRatio, { width: number; height: number 
 const VIDEO_BIT_RATE = 8_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
 const DEFAULT_CAMERA_LAYOUT: CameraLayout = {
-  x: 0.789, y: 0.771, size: 0.1875, shape: "rounded",
+  x: 0.789, y: 0.771, size: 0.1875, mode: "overlay", shape: "rounded",
   zoom: 1, cropX: 0.5, cropY: 0.5, customAspectRatio: 16 / 9, cornerRadius: 0.12,
 };
 const MIN_CAMERA_SIZE = 0.05;
@@ -368,10 +368,13 @@ export function useRecorder() {
         context.drawImage(frame, 0, 0, output.width, output.height);
         if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           const layout = cameraLayoutRef.current;
-          const width = output.width * layout.size;
-          const height = width / cameraAspectRatio(layout);
-          const x = output.width * layout.x; const y = output.height * layout.y;
-          const radius = cameraRadius(layout, width, height);
+          const split = layout.mode === "split";
+          const verticalSplit = split && recordingAspectRatioRef.current === "9:16";
+          const width = split ? (verticalSplit ? output.width : output.width * 0.45) : output.width * layout.size;
+          const height = split ? (verticalSplit ? output.height * 0.45 : output.height) : width / cameraAspectRatio(layout);
+          const x = split ? (verticalSplit ? 0 : output.width * 0.55) : output.width * layout.x;
+          const y = split ? (verticalSplit ? output.height * 0.55 : 0) : output.height * layout.y;
+          const radius = split ? 0 : cameraRadius(layout, width, height);
           context.save();
           context.beginPath();
           context.roundRect(x, y, width, height, radius);
