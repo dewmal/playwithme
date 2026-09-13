@@ -8,7 +8,7 @@ import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
 import { EChart } from "./EChart";
 import { SlideMarkdown } from "./SlideMarkdown";
-import type { CameraLayout } from "../types";
+import type { CameraLayout, CameraShape } from "../types";
 
 function textFromNode(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -53,13 +53,36 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
   const dragOffset = useRef({ x: 0, y: 0 });
   const resizeStart = useRef({ clientX: 0, size: 0, slideWidth: 1 });
   const layoutBeforeFit = useRef<CameraLayout | null>(null);
+  const [shapeMenu, setShapeMenu] = useState<{ x: number; y: number } | null>(null);
+  const shapes: { value: CameraShape; label: string }[] = [
+    { value: "rectangle", label: "Rectangle" },
+    { value: "rounded", label: "Rounded" },
+    { value: "pill", label: "Pill" },
+    { value: "circle", label: "Circle" },
+    { value: "portrait", label: "Portrait 9:16" },
+    { value: "freeform", label: "Freeform" },
+  ];
   useEffect(() => {
     if (!video.current) return;
     video.current.srcObject = stream;
     video.current.play().catch(() => undefined);
     return () => { if (video.current) video.current.srcObject = null; };
   }, [stream]);
+  useEffect(() => {
+    if (!shapeMenu) return;
+    const close = () => setShapeMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", close);
+    };
+  }, [shapeMenu]);
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     const slide = event.currentTarget.parentElement;
     if (!slide) return;
     const bounds = slide.getBoundingClientRect();
@@ -100,7 +123,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     event.stopPropagation();
     move({ ...layout, size: layout.size + direction * (event.shiftKey ? 0.04 : 0.01) });
   };
-  const fittedToScreen = layout.size >= 0.999;
+  const fittedToScreen = layoutBeforeFit.current !== null && layout.x === 0 && layout.y === 0;
   const toggleFit = () => {
     if (fittedToScreen && layoutBeforeFit.current) {
       const previous = layoutBeforeFit.current;
@@ -109,9 +132,27 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
       return;
     }
     layoutBeforeFit.current = layout;
-    move({ x: 0, y: 0, size: 1 });
+    move({ ...layout, x: 0, y: 0, size: 1 });
   };
-  return <div className="camera-preview" style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%` }} role="button" tabIndex={0} aria-label="Move camera preview" title="Drag to move camera" onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline /><span>Drag to move · resize from the corner</span><button type="button" className="camera-fit-toggle" aria-label={fittedToScreen ? "Restore previous camera size" : "Fit camera to screen"} title={fittedToScreen ? "Restore previous size" : "Fit to screen"} onPointerDown={(event) => event.stopPropagation()} onClick={toggleFit}>{fittedToScreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>;
+  return <>
+    <div className={`camera-preview camera-shape-${layout.shape}`} style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%`, ...(layout.shape === "freeform" ? { aspectRatio: String(layout.customAspectRatio), borderRadius: `${layout.cornerRadius * 100}%` } : {}) }} role="button" tabIndex={0} aria-label="Move camera preview; right click to crop or change shape" title="Drag to move · right click to crop or change shape" onContextMenu={(event) => { event.preventDefault(); setShapeMenu({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - 236)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 450)) }); }} onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline style={{ objectPosition: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%`, transform: `scaleX(-1) scale(${layout.zoom})`, transformOrigin: `${(1 - layout.cropX) * 100}% ${layout.cropY * 100}%` }} /><span>Drag frame · right click to crop</span><button type="button" className="camera-fit-toggle" aria-label={fittedToScreen ? "Restore previous camera size" : "Fit camera to screen"} title={fittedToScreen ? "Restore previous size" : "Fit to screen"} onPointerDown={(event) => event.stopPropagation()} onClick={toggleFit}>{fittedToScreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>
+    {shapeMenu && <div className="camera-shape-menu" role="menu" aria-label="Camera shape" style={{ left: shapeMenu.x, top: shapeMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+      <strong>Camera shape</strong>
+      {shapes.map((shape) => <button type="button" role="menuitemradio" aria-checked={layout.shape === shape.value} className={layout.shape === shape.value ? "active" : ""} key={shape.value} onClick={() => move({ ...layout, shape: shape.value })}><i className={`shape-${shape.value}`} /><span>{shape.label}</span></button>)}
+      <div className="camera-crop-controls">
+        <strong>Crop &amp; position</strong>
+        <label><span>Zoom <output>{layout.zoom.toFixed(1)}×</output></span><input type="range" min="1" max="4" step="0.1" value={layout.zoom} onChange={(event) => move({ ...layout, zoom: Number(event.target.value) })} /></label>
+        <label><span>Horizontal <output>{Math.round(layout.cropX * 100)}%</output></span><input type="range" min="0" max="100" value={Math.round(layout.cropX * 100)} onChange={(event) => move({ ...layout, cropX: Number(event.target.value) / 100 })} /></label>
+        <label><span>Vertical <output>{Math.round(layout.cropY * 100)}%</output></span><input type="range" min="0" max="100" value={Math.round(layout.cropY * 100)} onChange={(event) => move({ ...layout, cropY: Number(event.target.value) / 100 })} /></label>
+        <button type="button" className="camera-crop-reset" onClick={() => move({ ...layout, zoom: 1, cropX: 0.5, cropY: 0.5 })}>Reset crop</button>
+      </div>
+      {layout.shape === "freeform" && <div className="camera-crop-controls camera-freeform-controls">
+        <strong>Freeform frame</strong>
+        <label><span>Aspect <output>{layout.customAspectRatio.toFixed(2)}:1</output></span><input type="range" min="0.4" max="2.5" step="0.01" value={layout.customAspectRatio} onChange={(event) => move({ ...layout, customAspectRatio: Number(event.target.value) })} /></label>
+        <label><span>Roundness <output>{Math.round(layout.cornerRadius * 100)}%</output></span><input type="range" min="0" max="50" value={Math.round(layout.cornerRadius * 100)} onChange={(event) => move({ ...layout, cornerRadius: Number(event.target.value) / 100 })} /></label>
+      </div>}
+    </div>}
+  </>;
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {

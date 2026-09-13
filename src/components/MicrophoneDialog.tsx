@@ -1,6 +1,6 @@
-import { AudioLines, Camera, ExternalLink, Maximize2, Mic, Move, PanelRight, RotateCcw, ShieldAlert, VideoOff, X } from "lucide-react";
+import { AudioLines, Camera, ExternalLink, Maximize2, Mic, Move, PanelRight, RotateCcw, Shapes, ShieldAlert, VideoOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CameraLayout } from "../types";
+import type { CameraLayout, CameraShape } from "../types";
 
 type Props = {
   microphones: MediaDeviceInfo[];
@@ -42,10 +42,18 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
   const hearingInput = inputLevel > 0.025;
   const cameraPosition = (horizontal: "left" | "right", vertical: "top" | "bottom", size = cameraLayout.size) => {
     const margin = 0.035;
-    setCameraLayout({ size, x: horizontal === "left" ? margin : 1 - size - margin, y: vertical === "top" ? margin : 1 - size - margin });
+    setCameraLayout({ ...cameraLayout, size, x: horizontal === "left" ? margin : 1 - size - margin, y: vertical === "top" ? margin : 1 - size - margin });
   };
   const selectedCorner = `${cameraLayout.y < 0.5 ? "top" : "bottom"}-${cameraLayout.x < 0.5 ? "left" : "right"}`;
   const cameraSize = (size: number) => cameraPosition(cameraLayout.x < 0.5 ? "left" : "right", cameraLayout.y < 0.5 ? "top" : "bottom", size);
+  const cameraShapes: { value: CameraShape; label: string }[] = [
+    { value: "rectangle", label: "Rectangle" },
+    { value: "rounded", label: "Rounded" },
+    { value: "pill", label: "Pill" },
+    { value: "circle", label: "Circle" },
+    { value: "portrait", label: "9:16" },
+    { value: "freeform", label: "Custom" },
+  ];
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}>
     <section className="microphone-dialog" role="dialog" aria-modal="true" aria-labelledby="microphone-title">
@@ -81,7 +89,10 @@ export function MicrophoneDialog({ microphones, selectedDeviceId, selectedDevice
         <div><span><Maximize2 /> Size</span><div className="camera-size-options">
           {([{ label: "Small", size: 0.14 }, { label: "Medium", size: 0.1875 }, { label: "Large", size: 0.28 }] as const).map((option) => <button type="button" key={option.label} className={Math.abs(cameraLayout.size - option.size) < 0.02 ? "active" : ""} onClick={() => cameraSize(option.size)}>{option.label}</button>)}
         </div><label className="camera-size-slider"><input type="range" min="5" max="100" step="1" value={Math.round(cameraLayout.size * 100)} onChange={(event) => cameraSize(Number(event.target.value) / 100)} aria-label="Camera size" /><output>{Math.round(cameraLayout.size * 100)}%</output></label></div>
-        <small>You can drag or resize the camera directly on the slide after recording starts.</small>
+        <div className="camera-shape-control"><span><Shapes /> Shape</span><div className="camera-shape-options">
+          {cameraShapes.map((shape) => <button type="button" key={shape.value} className={cameraLayout.shape === shape.value ? "active" : ""} onClick={() => setCameraLayout({ ...cameraLayout, shape: shape.value })} aria-label={`${shape.label} camera shape`} aria-pressed={cameraLayout.shape === shape.value} title={shape.label}><i className={`shape-${shape.value}`} /><small>{shape.label}</small></button>)}
+        </div></div>
+        <small>During the session, drag or resize the camera and right click it to crop, zoom, reposition, or fine-tune a freeform frame.</small>
       </div>}
 
       <label className="microphone-select-label" htmlFor="microphone-select"><Mic /> Microphone</label>

@@ -12,13 +12,30 @@ const VIDEO_SIZES: Record<RecordingAspectRatio, { width: number; height: number 
 };
 const VIDEO_BIT_RATE = 8_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
-const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 };
+const DEFAULT_CAMERA_LAYOUT: CameraLayout = {
+  x: 0.789, y: 0.771, size: 0.1875, shape: "rounded",
+  zoom: 1, cropX: 0.5, cropY: 0.5, customAspectRatio: 16 / 9, cornerRadius: 0.12,
+};
 const MIN_CAMERA_SIZE = 0.05;
 const MAX_CAMERA_SIZE = 1;
 
-function cameraHeight(size: number, aspectRatio: RecordingAspectRatio) {
+function cameraAspectRatio(layout: Pick<CameraLayout, "shape" | "customAspectRatio">) {
+  if (layout.shape === "circle") return 1;
+  if (layout.shape === "portrait") return 9 / 16;
+  if (layout.shape === "freeform") return Math.min(2.5, Math.max(0.4, layout.customAspectRatio || 16 / 9));
+  return 16 / 9;
+}
+
+function cameraHeight(size: number, aspectRatio: RecordingAspectRatio, layout: Pick<CameraLayout, "shape" | "customAspectRatio">) {
   const output = VIDEO_SIZES[aspectRatio];
-  return Math.min(1, size * (9 / 16) * (output.width / output.height));
+  return Math.min(1, size / cameraAspectRatio(layout) * (output.width / output.height));
+}
+
+function cameraRadius(layout: Pick<CameraLayout, "shape" | "cornerRadius">, width: number, height: number) {
+  if (layout.shape === "rectangle" || layout.shape === "portrait") return 0;
+  if (layout.shape === "pill" || layout.shape === "circle") return Math.min(width, height) / 2;
+  if (layout.shape === "freeform") return Math.min(width, height) * Math.min(0.5, Math.max(0, layout.cornerRadius || 0));
+  return Math.max(18, width * 0.053);
 }
 
 export function useRecorder() {
@@ -226,9 +243,23 @@ export function useRecorder() {
   };
 
   const setCameraLayout = (layout: CameraLayout) => {
-    const size = Math.min(MAX_CAMERA_SIZE, Math.max(MIN_CAMERA_SIZE, layout.size));
-    const height = cameraHeight(size, recordingAspectRatioRef.current);
+    const shape = layout.shape ?? "rounded";
+    const normalizedLayout = {
+      ...DEFAULT_CAMERA_LAYOUT,
+      ...layout,
+      shape,
+      zoom: Math.min(4, Math.max(1, layout.zoom ?? 1)),
+      cropX: Math.min(1, Math.max(0, layout.cropX ?? 0.5)),
+      cropY: Math.min(1, Math.max(0, layout.cropY ?? 0.5)),
+      customAspectRatio: Math.min(2.5, Math.max(0.4, layout.customAspectRatio ?? 16 / 9)),
+      cornerRadius: Math.min(0.5, Math.max(0, layout.cornerRadius ?? 0.12)),
+    };
+    const output = VIDEO_SIZES[recordingAspectRatioRef.current];
+    const maxSize = Math.min(MAX_CAMERA_SIZE, cameraAspectRatio(normalizedLayout) / (output.width / output.height));
+    const size = Math.min(maxSize, Math.max(MIN_CAMERA_SIZE, layout.size));
+    const height = cameraHeight(size, recordingAspectRatioRef.current, normalizedLayout);
     const next = {
+      ...normalizedLayout,
       size,
       x: Math.min(1 - size, Math.max(0, layout.x)),
       y: Math.min(1 - height, Math.max(0, layout.y)),
@@ -337,16 +368,32 @@ export function useRecorder() {
         context.drawImage(frame, 0, 0, output.width, output.height);
         if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           const layout = cameraLayoutRef.current;
-          const width = output.width * layout.size; const height = width * 9 / 16;
+          const width = output.width * layout.size;
+          const height = width / cameraAspectRatio(layout);
           const x = output.width * layout.x; const y = output.height * layout.y;
-          const radius = Math.max(18, width * 0.053);
+          const radius = cameraRadius(layout, width, height);
           context.save();
           context.beginPath();
           context.roundRect(x, y, width, height, radius);
           context.clip();
           context.translate(x + width, y);
           context.scale(-1, 1);
-          context.drawImage(camera, 0, 0, width, height);
+          const sourceWidth = camera.videoWidth || width;
+          const sourceHeight = camera.videoHeight || height;
+          const sourceAspect = sourceWidth / sourceHeight;
+          const targetAspect = width / height;
+          let baseWidth = sourceWidth;
+          let baseHeight = sourceHeight;
+          if (sourceAspect > targetAspect) {
+            baseWidth = sourceHeight * targetAspect;
+          } else {
+            baseHeight = sourceWidth / targetAspect;
+          }
+          const cropWidth = baseWidth / layout.zoom;
+          const cropHeight = baseHeight / layout.zoom;
+          const sourceX = (sourceWidth - cropWidth) * (1 - layout.cropX);
+          const sourceY = (sourceHeight - cropHeight) * layout.cropY;
+          context.drawImage(camera, sourceX, sourceY, cropWidth, cropHeight, 0, 0, width, height);
           context.restore();
           context.save();
           context.strokeStyle = "rgba(255,255,255,.9)"; context.lineWidth = 10;
