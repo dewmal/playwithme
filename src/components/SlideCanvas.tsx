@@ -1,5 +1,5 @@
 import { isValidElement, useEffect, useMemo, useRef, useState, type ImgHTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { Paintbrush } from "lucide-react";
+import { Maximize2, Minimize2, Paintbrush } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
 import { loadProjectImage } from "../lib/native";
@@ -52,6 +52,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
   const video = useRef<HTMLVideoElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const resizeStart = useRef({ clientX: 0, size: 0, slideWidth: 1 });
+  const layoutBeforeFit = useRef<CameraLayout | null>(null);
   useEffect(() => {
     if (!video.current) return;
     video.current.srcObject = stream;
@@ -99,7 +100,18 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     event.stopPropagation();
     move({ ...layout, size: layout.size + direction * (event.shiftKey ? 0.04 : 0.01) });
   };
-  return <div className="camera-preview" style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%` }} role="button" tabIndex={0} aria-label="Move camera preview" title="Drag to move camera" onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline /><span>Drag to move · resize from the corner</span><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>;
+  const fittedToScreen = layout.size >= 0.999 && layout.x <= 0.001 && layout.y <= 0.001;
+  const toggleFit = () => {
+    if (fittedToScreen && layoutBeforeFit.current) {
+      const previous = layoutBeforeFit.current;
+      layoutBeforeFit.current = null;
+      move(previous);
+      return;
+    }
+    layoutBeforeFit.current = layout;
+    move({ x: 0, y: 0, size: 1 });
+  };
+  return <div className="camera-preview" style={{ left: `${layout.x * 100}%`, top: `${layout.y * 100}%`, width: `${layout.size * 100}%` }} role="button" tabIndex={0} aria-label="Move camera preview" title="Drag to move camera" onPointerDown={beginDrag} onPointerMove={drag} onKeyDown={nudge}><video ref={video} autoPlay muted playsInline /><span>Drag to move · resize from the corner</span><button type="button" className="camera-fit-toggle" aria-label={fittedToScreen ? "Restore previous camera size" : "Fit camera to screen"} title={fittedToScreen ? "Restore previous size" : "Fit to screen"} onPointerDown={(event) => event.stopPropagation()} onClick={toggleFit}>{fittedToScreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" className="camera-resize-handle" aria-label="Resize camera preview" title="Drag to resize camera" onPointerDown={beginResize} onPointerMove={resize} onKeyDown={resizeWithKeyboard} /></div>;
 }
 
 export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, showCamera = false, cameraLayout, moveCamera, notify }: { exportMode?: boolean; forcedStep?: number; cameraStream?: MediaStream | null; showCamera?: boolean; cameraLayout?: CameraLayout; moveCamera?: (layout: CameraLayout) => void; notify?: (message: string) => void }) {
