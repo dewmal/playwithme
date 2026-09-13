@@ -1,6 +1,6 @@
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { CellOutput, Drawing, RecordingSection, SessionData } from "../types";
+import type { CellOutput, Drawing, RecordingAspectRatio, RecordingSection, SessionData } from "../types";
 
 export type SettingsLocation = { mode: "project" | "home" | "cache" | "custom"; customRoot?: string };
 export interface PresentationProject { folder: string; settingsFolder: string; presentations: string[] }
@@ -9,6 +9,7 @@ export interface OpenedPresentation extends PresentationProject {
 }
 export interface RecordingTimeline {
   timelineId: string;
+  aspectRatio?: RecordingAspectRatio;
   sections: RecordingSection[];
   recordingFiles: string[];
   videoPath: string | null;

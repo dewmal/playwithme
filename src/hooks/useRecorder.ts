@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { useAppStore } from "../store";
 import { clearRecordingTimeline, exportRecordingSections, finalizeNativeRecording, loadRecordingPreview, loadRecordingTimeline, nativeRecordingAvailable, pauseNativeRecording, resumeNativeRecording, saveRecordingTimeline, saveSession, startNativeRecording, stopNativeRecording } from "../lib/native";
-import type { CameraLayout, RecordingSection, SessionData } from "../types";
+import type { CameraLayout, RecordingAspectRatio, RecordingSection, SessionData } from "../types";
 
-const VIDEO_WIDTH = 1920;
-const VIDEO_HEIGHT = 1080;
+const VIDEO_SIZES: Record<RecordingAspectRatio, { width: number; height: number }> = {
+  "16:9": { width: 1920, height: 1080 },
+  "4:3": { width: 1440, height: 1080 },
+  "1:1": { width: 1080, height: 1080 },
+  "9:16": { width: 1080, height: 1920 },
+};
 const VIDEO_BIT_RATE = 8_000_000;
 const EMPTY_WAVEFORM = Array.from({ length: 48 }, () => 0);
 const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 };
@@ -39,6 +43,8 @@ export function useRecorder() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [cameraLayout, setCameraLayoutState] = useState<CameraLayout>(DEFAULT_CAMERA_LAYOUT);
+  const [recordingAspectRatio, setRecordingAspectRatioState] = useState<RecordingAspectRatio>("16:9");
+  const recordingAspectRatioRef = useRef<RecordingAspectRatio>("16:9");
   const [cameraPermission, setCameraPermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
   const [cameraError, setCameraError] = useState("");
   const [microphonePermission, setMicrophonePermission] = useState<"prompt" | "granted" | "denied" | "unavailable">("prompt");
@@ -223,6 +229,12 @@ export function useRecorder() {
     setCameraLayoutState(next);
   };
 
+  const setRecordingAspectRatio = (aspectRatio: RecordingAspectRatio) => {
+    if (useAppStore.getState().recording || sectionsRef.current.length) return;
+    recordingAspectRatioRef.current = aspectRatio;
+    setRecordingAspectRatioState(aspectRatio);
+  };
+
   useEffect(() => {
     const handleDeviceChange = () => { refreshMicrophones().catch(() => undefined); };
     navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
@@ -253,10 +265,15 @@ export function useRecorder() {
     setSections([]);
     setRetakeSectionId(null);
     assembledVideoPath.current = null;
+    recordingAspectRatioRef.current = "16:9";
+    setRecordingAspectRatioState("16:9");
     let cancelled = false;
     loadRecordingTimeline(store.settingsFolder, store.presentationFile).then(async (saved) => {
       if (cancelled || deckKey.current !== nextKey || !saved) return;
       timelineId.current = saved.timelineId || `timeline-${Date.now()}`;
+      const savedAspectRatio = saved.aspectRatio ?? "16:9";
+      recordingAspectRatioRef.current = savedAspectRatio;
+      setRecordingAspectRatioState(savedAspectRatio);
       assembledVideoPath.current = saved.videoPath;
       recordingFiles.current = saved.recordingFiles?.length
         ? saved.recordingFiles
@@ -270,7 +287,8 @@ export function useRecorder() {
   const createSlideStream = async () => {
     const slide = document.querySelector<HTMLElement>(".slide-canvas");
     if (!slide) throw new Error("The presentation area is not available");
-    const output = document.createElement("canvas"); output.width = VIDEO_WIDTH; output.height = VIDEO_HEIGHT;
+    const { width: videoWidth, height: videoHeight } = VIDEO_SIZES[recordingAspectRatioRef.current];
+    const output = document.createElement("canvas"); output.width = videoWidth; output.height = videoHeight;
     const context = output.getContext("2d");
     if (!context) throw new Error("Video rendering is not supported on this device");
     const camera = document.createElement("video");
@@ -288,7 +306,7 @@ export function useRecorder() {
           if (cameraPreviewStream.current) camera.play().catch(() => undefined);
         }
         const bounds = slide.getBoundingClientRect();
-        const renderScale = Math.max(VIDEO_WIDTH / bounds.width, VIDEO_HEIGHT / bounds.height);
+        const renderScale = Math.max(videoWidth / bounds.width, videoHeight / bounds.height);
         const frameBackground = getComputedStyle(slide).backgroundColor;
         const frame = await html2canvas(slide, {
           scale: renderScale, backgroundColor: frameBackground, useCORS: true, logging: false,
@@ -310,7 +328,7 @@ export function useRecorder() {
         context.drawImage(frame, 0, 0, output.width, output.height);
         if (cameraEnabledRef.current && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           const layout = cameraLayoutRef.current;
-          const width = output.width * layout.size; const height = output.height * layout.size;
+          const width = output.width * layout.size; const height = width * 9 / 16;
           const x = output.width * layout.x; const y = output.height * layout.y;
           const radius = Math.max(18, width * 0.053);
           context.save();
@@ -360,6 +378,9 @@ export function useRecorder() {
         // first frame. Without this paint boundary, old ink can enter the video.
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       }
+      // Ensure a newly selected recording ratio has reached layout before the
+      // native recorder measures its capture rectangle.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const state = useAppStore.getState();
       activeSessionId.current = new Date().toISOString().replace(/[:.]/g, "-");
       usingNativeCapture.current = !!state.settingsFolder && await nativeRecordingAvailable();
@@ -459,7 +480,7 @@ export function useRecorder() {
       sectionsRef.current = next;
       setSections(next);
       setRetakeSectionId(null);
-      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembledVideoPath.current });
+      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, aspectRatio: recordingAspectRatioRef.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembledVideoPath.current });
       return videoPath;
     } finally { recorder.current = null; videoRecorder.current = null; usingNativeCapture.current = false; activeSessionId.current = ""; timelineMutation.current = false; setProcessingStatus(null); }
   };
@@ -475,7 +496,7 @@ export function useRecorder() {
     if (retakeSectionId === id) setRetakeSectionId(null);
     try {
       const current = useAppStore.getState();
-      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembledVideoPath.current });
+      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, aspectRatio: recordingAspectRatioRef.current, sections: next, recordingFiles: recordingFiles.current, videoPath: assembledVideoPath.current });
     } finally { timelineMutation.current = false; setProcessingStatus(null); }
   };
 
@@ -535,7 +556,7 @@ export function useRecorder() {
       const assembled = await exportRecordingSections(current.settingsFolder, sources, timelineId.current, current.presentationFile, totalDuration, onProgress);
       if (!assembled) return false;
       assembledVideoPath.current = assembled;
-      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, sections: sectionsRef.current, recordingFiles: recordingFiles.current, videoPath: assembled, videoSources: sources });
+      await saveRecordingTimeline(current.settingsFolder, current.presentationFile, { timelineId: timelineId.current, aspectRatio: recordingAspectRatioRef.current, sections: sectionsRef.current, recordingFiles: recordingFiles.current, videoPath: assembled, videoSources: sources });
       onProgress?.(100, "Video export complete");
       return true;
     } finally {
@@ -544,5 +565,5 @@ export function useRecorder() {
     }
   };
 
-  return { elapsed, paused, processingStatus, sections, retakeSectionId, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop, removeSection, replaySection, clearAllSections, retakeSection, exportRecording };
+  return { elapsed, paused, processingStatus, sections, retakeSectionId, microphones, selectedDeviceId, selectedDeviceLabel, microphonePermission, microphoneError, waveform, inputLevel, cameras, selectedCameraId, selectedCameraLabel, cameraStream, cameraEnabled, cameraLayout, recordingAspectRatio, cameraPermission, cameraError, prepareMicrophone, selectMicrophone, selectCamera, toggleCamera, setCameraLayout, setRecordingAspectRatio, cancelMicrophoneSetup: stopPreview, start, pause, resume, stop, removeSection, replaySection, clearAllSections, retakeSection, exportRecording };
 }

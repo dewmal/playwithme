@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AudioLines, CirclePlay, Clock3, LoaderCircle, Maximize2, RotateCcw, Scissors, Trash2, X } from "lucide-react";
 import { useAppStore } from "../store";
-import type { RecordingSection } from "../types";
+import type { RecordingAspectRatio, RecordingSection } from "../types";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { SlideMarkdown } from "./SlideMarkdown";
 
@@ -18,6 +18,8 @@ interface PresenterPanelProps {
   inputLevel: number;
   sections: RecordingSection[];
   retakeSectionId: string | null;
+  recordingAspectRatio: RecordingAspectRatio;
+  setRecordingAspectRatio: (aspectRatio: RecordingAspectRatio) => void;
   close: () => void;
   removeSection: (id: string) => void;
   replaySection: (id: string) => Promise<string | null>;
@@ -26,7 +28,7 @@ interface PresenterPanelProps {
   retakeSection: (id: string) => void;
 }
 
-export function PresenterPanel({ elapsed, paused, recording, processing, microphone, inputLevel, sections, retakeSectionId, close, removeSection, replaySection, clearSections, cleanPresentation, retakeSection }: PresenterPanelProps) {
+export function PresenterPanel({ elapsed, paused, recording, processing, microphone, inputLevel, sections, retakeSectionId, recordingAspectRatio, setRecordingAspectRatio, close, removeSection, replaySection, clearSections, cleanPresentation, retakeSection }: PresenterPanelProps) {
   const { slides, slideIndex, theme } = useAppStore();
   const [playingSectionId, setPlayingSectionId] = useState<string | null>(null);
   const [playingPreviewUrl, setPlayingPreviewUrl] = useState<string | null>(null);
@@ -66,13 +68,24 @@ export function PresenterPanel({ elapsed, paused, recording, processing, microph
   return <aside className="presenter-panel" aria-label="Presenter view">
     <header>
       <div><span className="eyebrow">Presenter view</span><strong>Slide {slideIndex + 1} of {slides.length}</strong></div>
-      <span className="presenter-head-actions"><AudioLines aria-label="Audio input active" /><button onClick={close} title="Close presenter view" aria-label="Close presenter view"><X /></button></span>
+      <span className="presenter-head-actions"><AudioLines aria-label="Audio input active" /><button onClick={close} disabled={recording} title={recording ? "Recording view is locked while recording" : "Close presenter view"} aria-label="Close presenter view"><X /></button></span>
     </header>
 
     <section className={`presenter-timer${paused ? " paused" : ""}${recording ? "" : " ready"}`} aria-label={recording ? `${paused ? "Paused" : "Recording"} at ${clock(elapsed)}` : "Ready to record"}>
       <span className="record-dot" />
       <div><small>{recording ? (paused ? "Paused" : "Recording") : "Ready to record"}</small><b>{recording ? clock(elapsed) : "Press Start below"}</b></div>
       <Clock3 />
+    </section>
+
+    <section className="recording-ratio-control">
+      <label htmlFor="recording-aspect-ratio"><Maximize2 /><span><small>Recording area</small><b>Aspect ratio</b></span></label>
+      <select id="recording-aspect-ratio" value={recordingAspectRatio} onChange={(event) => setRecordingAspectRatio(event.target.value as RecordingAspectRatio)} disabled={recording || processing || sections.length > 0}>
+        <option value="16:9">16:9 Landscape</option>
+        <option value="4:3">4:3 Classic</option>
+        <option value="1:1">1:1 Square</option>
+        <option value="9:16">9:16 Portrait</option>
+      </select>
+      {sections.length > 0 && <small className="recording-ratio-lock">Clear recordings to choose a new ratio.</small>}
     </section>
 
     <section className="presenter-microphone" title={microphone}>

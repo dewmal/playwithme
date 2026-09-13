@@ -33,6 +33,8 @@ export interface RecordingSection {
   previewUrl: string | null;
 }
 
+export type RecordingAspectRatio = "16:9" | "4:3" | "1:1" | "9:16";
+
 export interface CameraLayout {
   /** Normalized against the slide, so preview and recorded output stay aligned. */
   x: number;
