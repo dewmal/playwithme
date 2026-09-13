@@ -100,7 +100,7 @@ function CameraPreview({ stream, layout, move }: { stream: MediaStream; layout: 
     event.stopPropagation();
     move({ ...layout, size: layout.size + direction * (event.shiftKey ? 0.04 : 0.01) });
   };
-  const fittedToScreen = layout.size >= 0.999 && layout.x <= 0.001 && layout.y <= 0.001;
+  const fittedToScreen = layout.size >= 0.999;
   const toggleFit = () => {
     if (fittedToScreen && layoutBeforeFit.current) {
       const previous = layoutBeforeFit.current;

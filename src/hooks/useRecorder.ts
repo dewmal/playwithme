@@ -16,6 +16,11 @@ const DEFAULT_CAMERA_LAYOUT: CameraLayout = { x: 0.789, y: 0.771, size: 0.1875 }
 const MIN_CAMERA_SIZE = 0.05;
 const MAX_CAMERA_SIZE = 1;
 
+function cameraHeight(size: number, aspectRatio: RecordingAspectRatio) {
+  const output = VIDEO_SIZES[aspectRatio];
+  return Math.min(1, size * (9 / 16) * (output.width / output.height));
+}
+
 export function useRecorder() {
   const recorder = useRef<MediaRecorder | null>(null);
   const videoRecorder = useRef<MediaRecorder | null>(null);
@@ -222,10 +227,11 @@ export function useRecorder() {
 
   const setCameraLayout = (layout: CameraLayout) => {
     const size = Math.min(MAX_CAMERA_SIZE, Math.max(MIN_CAMERA_SIZE, layout.size));
+    const height = cameraHeight(size, recordingAspectRatioRef.current);
     const next = {
       size,
       x: Math.min(1 - size, Math.max(0, layout.x)),
-      y: Math.min(1 - size, Math.max(0, layout.y)),
+      y: Math.min(1 - height, Math.max(0, layout.y)),
     };
     cameraLayoutRef.current = next;
     setCameraLayoutState(next);
@@ -235,6 +241,7 @@ export function useRecorder() {
     if (useAppStore.getState().recording || sectionsRef.current.length) return;
     recordingAspectRatioRef.current = aspectRatio;
     setRecordingAspectRatioState(aspectRatio);
+    setCameraLayout(cameraLayoutRef.current);
   };
 
   useEffect(() => {
