@@ -195,6 +195,26 @@ https://youtu.be/dQw4w9WgXcQ?t=30s
 
 The player includes play, pause, restart, 10-second seek, mute, fill-slide, and fullscreen controls. Use **Fill slide** while recording so the video stays inside the captured slide area. Internet access is required. Embedded video visuals are captured by the macOS desktop recorder; PDF export uses the video's preview image instead of live playback. Presenta records microphone narration, but it does not add YouTube's audio track directly to the exported recording.
 
+## Embed a website
+
+Place a complete website URL in a `website` directive on its own line:
+
+```md
+# Live product
+
+      @[website](https://example.com)
+```
+
+You can also use a fenced block:
+
+````md
+```website
+https://example.com/dashboard
+```
+````
+
+The website stays interactive while you present. Its toolbar can reload the page, open it separately, fill the slide, or enter fullscreen. Internet access is required. Some sites prevent browser-based iframe embedding; the desktop app loads the URL in a native child webview instead. PDF exports show the website address in place of the live page.
+
 ## Add a table
 
 Use a table when values need to be compared:

@@ -5,10 +5,19 @@ import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { slideContentBlocks } from "../lib/slides";
 
+function expandEmbedDirectives(source: string) {
+  return source
+    .replace(/^\s*@\[youtube\]\((https?:\/\/[^\s)]+)\)\s*$/gim, "```youtube\n$1\n```")
+    .replace(/^\s*@\[(?:website|web)((?:\s+[a-z]+=(?:[^\s\]]+))*)\]\((https?:\/\/[^\s)]+)\)\s*$/gim, (_match, attributes: string, url: string) => {
+      const options = attributes.trim().split(/\s+/).filter(Boolean);
+      return ["```website", url, ...options, "```"].join("\n");
+    });
+}
+
 export function SlideMarkdown({ markdown, components, rich = true }: { markdown: string; components?: Components; rich?: boolean }) {
   const blocks = slideContentBlocks(markdown);
   const renderMarkdown = (source: string, key: string) => {
-    const withVideoEmbeds = source.replace(/^\s*@\[youtube\]\((https?:\/\/[^\s)]+)\)\s*$/gim, "```youtube\n$1\n```");
+    const withVideoEmbeds = expandEmbedDirectives(source);
     return rich
       ? <ReactMarkdown key={key} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={components}>{withVideoEmbeds}</ReactMarkdown>
       : <ReactMarkdown key={key} remarkPlugins={[remarkGfm]} components={components}>{withVideoEmbeds}</ReactMarkdown>;

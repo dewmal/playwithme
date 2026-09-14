@@ -41,6 +41,30 @@ fn validate_youtube_label(label: &str) -> Result<(), String> {
     }
 }
 
+fn validate_website_label(label: &str) -> Result<(), String> {
+    if label.starts_with("website-")
+        && label.len() <= 96
+        && label
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        Ok(())
+    } else {
+        Err("Invalid website embed identifier".into())
+    }
+}
+
+fn validate_website_url(value: &str) -> Result<tauri::Url, String> {
+    let url: tauri::Url = value
+        .parse()
+        .map_err(|error| format!("The website URL is invalid: {error}"))?;
+    if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() {
+        Ok(url)
+    } else {
+        Err("Website embeds require a complete http:// or https:// URL".into())
+    }
+}
+
 fn validate_embed_bounds(bounds: EmbedBounds) -> Result<(), String> {
     if [bounds.x, bounds.y, bounds.width, bounds.height]
         .into_iter()
@@ -51,6 +75,14 @@ fn validate_embed_bounds(bounds: EmbedBounds) -> Result<(), String> {
         Ok(())
     } else {
         Err("The YouTube player area is invalid".into())
+    }
+}
+
+fn validate_embed_zoom(zoom: f64) -> Result<(), String> {
+    if zoom.is_finite() && (0.1..=2.0).contains(&zoom) {
+        Ok(())
+    } else {
+        Err("The website viewport scale is invalid".into())
     }
 }
 
@@ -1536,6 +1568,77 @@ fn close_youtube_embed(source_webview: tauri::Webview, label: String) -> Result<
     Ok(())
 }
 
+#[tauri::command]
+fn create_website_embed(
+    webview: tauri::Webview,
+    label: String,
+    url: String,
+    bounds: EmbedBounds,
+    zoom: f64,
+) -> Result<(), String> {
+    validate_website_label(&label)?;
+    validate_embed_bounds(bounds)?;
+    validate_embed_zoom(zoom)?;
+    let url = validate_website_url(&url)?;
+    let parent = webview.window();
+    if let Some(existing) = parent
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+    {
+        existing.close().map_err(|error| error.to_string())?;
+    }
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(url));
+    let website = parent
+        .add_child(
+            builder,
+            LogicalPosition::new(bounds.x, bounds.y),
+            LogicalSize::new(bounds.width, bounds.height),
+        )
+        .map_err(|error| format!("Could not create the website embed: {error}"))?;
+    website
+        .set_zoom(zoom)
+        .map_err(|error| format!("Could not set the website viewport: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn position_website_embed(
+    source_webview: tauri::Webview,
+    label: String,
+    bounds: EmbedBounds,
+    zoom: f64,
+) -> Result<(), String> {
+    validate_website_label(&label)?;
+    validate_embed_bounds(bounds)?;
+    validate_embed_zoom(zoom)?;
+    let webview = source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+        .ok_or("The website embed is no longer available")?;
+    webview
+        .set_position(LogicalPosition::new(bounds.x, bounds.y))
+        .and_then(|_| webview.set_size(LogicalSize::new(bounds.width, bounds.height)))
+        .and_then(|_| webview.set_zoom(zoom))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn close_website_embed(source_webview: tauri::Webview, label: String) -> Result<(), String> {
+    validate_website_label(&label)?;
+    if let Some(webview) = source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+    {
+        webview.close().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1571,7 +1674,10 @@ pub fn run() {
             create_youtube_embed,
             position_youtube_embed,
             control_youtube_embed,
-            close_youtube_embed
+            close_youtube_embed,
+            create_website_embed,
+            position_website_embed,
+            close_website_embed
         ])
         .run(tauri::generate_context!())
         .expect("error while running Presenta");
@@ -1580,6 +1686,30 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn website_embeds_only_accept_web_urls() {
+        assert!(validate_website_url("https://example.com/demo?mode=present").is_ok());
+        assert!(validate_website_url("http://localhost:3000").is_ok());
+        assert!(validate_website_url("javascript:alert(1)").is_err());
+        assert!(validate_website_url("file:///tmp/private.html").is_err());
+        assert!(validate_website_url("example.com").is_err());
+    }
+
+    #[test]
+    fn website_embed_labels_are_scoped() {
+        assert!(validate_website_label("website-abc123").is_ok());
+        assert!(validate_website_label("youtube-abc123").is_err());
+        assert!(validate_website_label("website-bad/value").is_err());
+    }
+
+    #[test]
+    fn website_embed_zoom_is_bounded() {
+        assert!(validate_embed_zoom(1.0).is_ok());
+        assert!(validate_embed_zoom(0.25).is_ok());
+        assert!(validate_embed_zoom(0.0).is_err());
+        assert!(validate_embed_zoom(f64::NAN).is_err());
+    }
 
     #[test]
     fn native_python_kernel_preserves_state_and_supplies_input() {
