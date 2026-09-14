@@ -94,6 +94,19 @@ export async function saveSession(folder: string | null, settingsFolder: string 
 }
 
 export interface NativeCaptureRect { x: number; y: number; width: number; height: number }
+export const NATIVE_EMBED_LAYOUT_EVENT = "presenta:native-embed-layout";
+
+export function visibleNativeEmbedBounds(element: HTMLElement): NativeCaptureRect | null {
+  const frame = element.getBoundingClientRect();
+  const pane = element.closest<HTMLElement>(".slide-pane")?.getBoundingClientRect();
+  const left = Math.max(0, frame.left, pane?.left ?? frame.left);
+  const top = Math.max(0, frame.top, pane?.top ?? frame.top);
+  const right = Math.min(window.innerWidth, frame.right, pane?.right ?? frame.right);
+  const bottom = Math.min(window.innerHeight, frame.bottom, pane?.bottom ?? frame.bottom);
+  const width = right - left;
+  const height = bottom - top;
+  return width > 0 && height > 0 ? { x: left, y: top, width, height } : null;
+}
 
 export async function nativeRecordingAvailable() {
   if (!isTauri()) return false;
@@ -168,6 +181,11 @@ export async function openMicrophoneSettings() {
   if (!isTauri()) return false;
   await invoke("open_microphone_settings");
   return true;
+}
+
+export async function setNativeEmbedsVisible(visible: boolean) {
+  if (!isTauri()) return;
+  await invoke("set_native_embeds_visible", { visible });
 }
 
 export function exportFilename(presentationFile: string | null, extension: "pdf" | "mp4") {

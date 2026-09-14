@@ -6,7 +6,10 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, ipc::Channel, webview::WebviewBuilder};
 
@@ -54,6 +57,10 @@ fn validate_website_label(label: &str) -> Result<(), String> {
     }
 }
 
+fn is_native_embed_label(label: &str) -> bool {
+    validate_youtube_label(label).is_ok() || validate_website_label(label).is_ok()
+}
+
 fn validate_website_url(value: &str) -> Result<tauri::Url, String> {
     let url: tauri::Url = value
         .parse()
@@ -95,6 +102,7 @@ struct NativeRecording {
 
 static NATIVE_RECORDING: OnceLock<Mutex<Option<NativeRecording>>> = OnceLock::new();
 static PYTHON_KERNEL: OnceLock<Mutex<Option<NativePythonKernel>>> = OnceLock::new();
+static NATIVE_EMBEDS_VISIBLE: AtomicBool = AtomicBool::new(true);
 
 struct NativePythonKernel {
     folder: PathBuf,
@@ -1466,6 +1474,11 @@ fn create_youtube_embed(
             LogicalSize::new(bounds.width, bounds.height),
         )
         .map_err(|error| format!("Could not create the YouTube player: {error}"))?;
+    if !NATIVE_EMBEDS_VISIBLE.load(Ordering::Acquire) {
+        player
+            .hide()
+            .map_err(|error| format!("Could not hide the YouTube player: {error}"))?;
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -1569,6 +1582,25 @@ fn close_youtube_embed(source_webview: tauri::Webview, label: String) -> Result<
 }
 
 #[tauri::command]
+fn set_native_embeds_visible(source_webview: tauri::Webview, visible: bool) -> Result<(), String> {
+    NATIVE_EMBEDS_VISIBLE.store(visible, Ordering::Release);
+    for embed in source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .filter(|webview| is_native_embed_label(webview.label()))
+    {
+        if visible {
+            embed.show()
+        } else {
+            embed.hide()
+        }
+        .map_err(|error| format!("Could not update embedded content visibility: {error}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn create_website_embed(
     webview: tauri::Webview,
     label: String,
@@ -1596,6 +1628,11 @@ fn create_website_embed(
             LogicalSize::new(bounds.width, bounds.height),
         )
         .map_err(|error| format!("Could not create the website embed: {error}"))?;
+    if !NATIVE_EMBEDS_VISIBLE.load(Ordering::Acquire) {
+        website
+            .hide()
+            .map_err(|error| format!("Could not hide the website embed: {error}"))?;
+    }
     website
         .set_zoom(zoom)
         .map_err(|error| format!("Could not set the website viewport: {error}"))?;
@@ -1675,6 +1712,7 @@ pub fn run() {
             position_youtube_embed,
             control_youtube_embed,
             close_youtube_embed,
+            set_native_embeds_visible,
             create_website_embed,
             position_website_embed,
             close_website_embed
@@ -1701,6 +1739,9 @@ mod tests {
         assert!(validate_website_label("website-abc123").is_ok());
         assert!(validate_website_label("youtube-abc123").is_err());
         assert!(validate_website_label("website-bad/value").is_err());
+        assert!(is_native_embed_label("website-abc123"));
+        assert!(is_native_embed_label("youtube-abc123"));
+        assert!(!is_native_embed_label("main"));
     }
 
     #[test]

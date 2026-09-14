@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ExternalLink, FastForward, Maximize2, Minimize2, Pause, Play, Rewind, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { NATIVE_EMBED_LAYOUT_EVENT, visibleNativeEmbedBounds } from "../lib/native";
 
 interface YouTubeVideo {
   id: string;
@@ -74,10 +75,7 @@ export function YouTubeEmbed({ source }: { source: string }) {
     nativeLabel.current = label;
     let disposed = false;
     let ready = false;
-    const bounds = () => {
-      const rect = frameHost.current?.getBoundingClientRect();
-      return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
-    };
+    const bounds = () => frameHost.current ? visibleNativeEmbedBounds(frameHost.current) : null;
     const syncBounds = () => {
       const next = bounds();
       if (!ready || !next) return;
@@ -98,12 +96,14 @@ export function YouTubeEmbed({ source }: { source: string }) {
     observer.observe(frameHost.current);
     window.addEventListener("resize", syncBounds);
     window.addEventListener("scroll", syncBounds, true);
+    window.addEventListener(NATIVE_EMBED_LAYOUT_EVENT, syncBounds);
     return () => {
       disposed = true;
       ready = false;
       observer.disconnect();
       window.removeEventListener("resize", syncBounds);
       window.removeEventListener("scroll", syncBounds, true);
+      window.removeEventListener(NATIVE_EMBED_LAYOUT_EVENT, syncBounds);
       if (nativeLabel.current === label) nativeLabel.current = null;
       invoke("close_youtube_embed", { label }).catch(() => undefined);
     };
@@ -112,11 +112,11 @@ export function YouTubeEmbed({ source }: { source: string }) {
   useEffect(() => {
     if (!nativePlayer || !nativeLabel.current) return;
     const animationFrame = requestAnimationFrame(() => {
-      const rect = frameHost.current?.getBoundingClientRect();
+      const rect = frameHost.current ? visibleNativeEmbedBounds(frameHost.current) : null;
       if (!rect || !nativeLabel.current) return;
       invoke("position_youtube_embed", {
         label: nativeLabel.current,
-        bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        bounds: rect,
       }).catch(() => undefined);
     });
     return () => cancelAnimationFrame(animationFrame);

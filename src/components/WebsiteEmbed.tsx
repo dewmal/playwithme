@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ExternalLink, Maximize2, Minimize2, MonitorSmartphone, RefreshCw } from "lucide-react";
+import { NATIVE_EMBED_LAYOUT_EVENT, visibleNativeEmbedBounds } from "../lib/native";
 
 type ViewportMode = "auto" | "desktop" | "tablet" | "mobile";
 
@@ -109,10 +110,7 @@ export function WebsiteEmbed({ source }: { source: string }) {
     nativeLabel.current = label;
     let disposed = false;
     let ready = false;
-    const bounds = () => {
-      const rect = frameHost.current?.getBoundingClientRect();
-      return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
-    };
+    const bounds = () => frameHost.current ? visibleNativeEmbedBounds(frameHost.current) : null;
     const syncBounds = () => {
       const next = bounds();
       if (!ready || !next) return;
@@ -134,12 +132,14 @@ export function WebsiteEmbed({ source }: { source: string }) {
     observer.observe(frameHost.current);
     window.addEventListener("resize", syncBounds);
     window.addEventListener("scroll", syncBounds, true);
+    window.addEventListener(NATIVE_EMBED_LAYOUT_EVENT, syncBounds);
     return () => {
       disposed = true;
       ready = false;
       observer.disconnect();
       window.removeEventListener("resize", syncBounds);
       window.removeEventListener("scroll", syncBounds, true);
+      window.removeEventListener(NATIVE_EMBED_LAYOUT_EVENT, syncBounds);
       if (nativeLabel.current === label) nativeLabel.current = null;
       invoke("close_website_embed", { label }).catch(() => undefined);
     };
@@ -147,11 +147,11 @@ export function WebsiteEmbed({ source }: { source: string }) {
 
   useEffect(() => {
     localStorage.setItem("presenta:website-viewport", viewportMode);
-    const rect = frameHost.current?.getBoundingClientRect();
+    const rect = frameHost.current ? visibleNativeEmbedBounds(frameHost.current) : null;
     if (!nativeBrowser || !nativeLabel.current || !rect) return;
     invoke("position_website_embed", {
       label: nativeLabel.current,
-      bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      bounds: rect,
       zoom: viewportZoom(rect.width, viewportMode),
     }).catch(() => undefined);
   }, [nativeBrowser, viewportMode]);

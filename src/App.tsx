@@ -7,7 +7,7 @@ import { SourcePanel } from "./components/SourcePanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { HelpDialog } from "./components/HelpDialog";
 import { useAppStore } from "./store";
-import { choosePresentationProject, chooseSettingsRoot, createPresentation, openMicrophoneSettings, openPresentation, resolveSettingsFolder, savePresentation, settingsCacheFolder, settingsHomeFolder, type SettingsLocation } from "./lib/native";
+import { choosePresentationProject, chooseSettingsRoot, createPresentation, openMicrophoneSettings, openPresentation, resolveSettingsFolder, savePresentation, setNativeEmbedsVisible, settingsCacheFolder, settingsHomeFolder, type SettingsLocation } from "./lib/native";
 import { PresentationPicker } from "./components/PresentationPicker";
 import { useRecorder } from "./hooks/useRecorder";
 import { NEW_PRESENTATION_MARKDOWN, SAMPLE_MARKDOWN } from "./lib/sample";
@@ -92,6 +92,11 @@ export default function App() {
     settingsHomeFolder().then(setHomeSettings).catch(() => undefined);
     settingsCacheFolder().then(setCacheSettings).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const obscured = microphoneOpen || exportOpen || helpOpen || settingsOpen || picker !== null;
+    setNativeEmbedsVisible(!obscured).catch(() => undefined);
+  }, [microphoneOpen, exportOpen, helpOpen, settingsOpen, picker]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {

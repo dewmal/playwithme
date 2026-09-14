@@ -2,7 +2,7 @@ import { isValidElement, useEffect, useMemo, useRef, useState, type ImgHTMLAttri
 import { Maximize2, Minimize2, Paintbrush } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { useAppStore } from "../store";
-import { loadProjectImage } from "../lib/native";
+import { loadProjectImage, NATIVE_EMBED_LAYOUT_EVENT } from "../lib/native";
 import { backgroundTone, codeTheme, slideThemeStyle, visibleMarkdown } from "../lib/slides";
 import { CodeCell } from "./CodeCell";
 import { DrawingLayer } from "./DrawingLayer";
@@ -202,6 +202,10 @@ export function SlideCanvas({ exportMode = false, forcedStep, cameraStream, show
   }), [slide?.id, slideResetRevisions, exportMode, manualChartPlayback, resolvedCodeTheme]);
 
   useEffect(() => setMenu(null), [slideIndex, mode]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => window.dispatchEvent(new Event(NATIVE_EMBED_LAYOUT_EVENT)));
+    return () => cancelAnimationFrame(frame);
+  }, [cameraLayout?.mode, showCamera]);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
