@@ -8,7 +8,7 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Mutex, OnceLock},
 };
-use tauri::{Manager, ipc::Channel};
+use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, ipc::Channel, webview::WebviewBuilder};
 
 const APP_DIRECTORY: &str = ".presenta";
 
@@ -19,6 +19,39 @@ struct CaptureRect {
     y: f64,
     width: f64,
     height: f64,
+}
+
+#[derive(serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct EmbedBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+fn validate_youtube_label(label: &str) -> Result<(), String> {
+    if label.starts_with("youtube-")
+        && label.len() <= 96
+        && label.chars().all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        Ok(())
+    } else {
+        Err("Invalid YouTube player identifier".into())
+    }
+}
+
+fn validate_embed_bounds(bounds: EmbedBounds) -> Result<(), String> {
+    if [bounds.x, bounds.y, bounds.width, bounds.height]
+        .into_iter()
+        .all(f64::is_finite)
+        && bounds.width >= 200.0
+        && bounds.height >= 200.0
+    {
+        Ok(())
+    } else {
+        Err("The YouTube player area is invalid".into())
+    }
 }
 
 struct NativeRecording {
@@ -1361,6 +1394,148 @@ fn open_microphone_settings() -> Result<(), String> {
     Err("Microphone settings are not available on this platform".into())
 }
 
+#[tauri::command]
+fn create_youtube_embed(
+    webview: tauri::Webview,
+    label: String,
+    video_id: String,
+    start: u64,
+    bounds: EmbedBounds,
+) -> Result<(), String> {
+    validate_youtube_label(&label)?;
+    validate_embed_bounds(bounds)?;
+    if video_id.len() != 11
+        || !video_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_')
+    {
+        return Err("Invalid YouTube video identifier".into());
+    }
+
+    let parent = webview.window();
+    if let Some(existing) = parent.webviews().into_iter().find(|webview| webview.label() == label) {
+        existing.close().map_err(|error| error.to_string())?;
+    }
+    let identity = "https://com.presenta.desktop";
+    let url: tauri::Url = format!(
+        "https://www.youtube.com/embed/{video_id}?enablejsapi=1&playsinline=1&rel=0&controls=1&origin={identity}&widget_referrer={identity}{}",
+        if start > 0 { format!("&start={start}") } else { String::new() }
+    )
+    .parse()
+    .map_err(|error| format!("Could not construct the YouTube player URL: {error}"))?;
+    let blank: tauri::Url = "about:blank"
+        .parse()
+        .map_err(|error| format!("Could not construct the player WebView URL: {error}"))?;
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(blank));
+    let player = parent
+        .add_child(
+            builder,
+            LogicalPosition::new(bounds.x, bounds.y),
+            LogicalSize::new(bounds.width, bounds.height),
+        )
+        .map_err(|error| format!("Could not create the YouTube player: {error}"))?;
+
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSString, NSURL};
+        use objc2_web_kit::WKWebView;
+
+        let player_url = url.to_string();
+        let html = format!(
+            r#"<!doctype html><html><head><meta name="referrer" content="strict-origin"><style>html,body,iframe{{width:100%;height:100%;margin:0;border:0;background:#000;overflow:hidden}}</style></head><body><iframe id="player" src="{player_url}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe><script>const player=document.getElementById('player');window.presentaCurrentTime={start};window.presentaCommand=(func,args=[])=>player.contentWindow.postMessage(JSON.stringify({{event:'command',func,args}}),'https://www.youtube.com');player.addEventListener('load',()=>player.contentWindow.postMessage(JSON.stringify({{event:'listening',id:'presenta'}}),'https://www.youtube.com'));window.addEventListener('message',event=>{{if(event.origin!=='https://www.youtube.com')return;try{{const data=typeof event.data==='string'?JSON.parse(event.data):event.data;if(data?.event==='infoDelivery'&&typeof data.info?.currentTime==='number')window.presentaCurrentTime=data.info.currentTime}}catch{{}}}});</script></body></html>"#
+        );
+        player
+            .with_webview(move |platform| unsafe {
+                let webview: &WKWebView = &*platform.inner().cast();
+                let html = NSString::from_str(&html);
+                let identity = NSString::from_str("https://com.presenta.desktop/");
+                if let Some(base_url) = NSURL::URLWithString(&identity) {
+                    webview.loadHTMLString_baseURL(&html, Some(&base_url));
+                }
+            })
+            .map_err(|error| format!("Could not load the YouTube player: {error}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    player
+        .navigate(url)
+        .map_err(|error| format!("Could not load the YouTube player: {error}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn position_youtube_embed(
+    source_webview: tauri::Webview,
+    label: String,
+    bounds: EmbedBounds,
+) -> Result<(), String> {
+    validate_youtube_label(&label)?;
+    validate_embed_bounds(bounds)?;
+    let webview = source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+        .ok_or("The YouTube player is no longer available")?;
+    webview
+        .set_position(LogicalPosition::new(bounds.x, bounds.y))
+        .and_then(|_| webview.set_size(LogicalSize::new(bounds.width, bounds.height)))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn control_youtube_embed(
+    source_webview: tauri::Webview,
+    label: String,
+    action: String,
+    value: Option<f64>,
+) -> Result<(), String> {
+    validate_youtube_label(&label)?;
+    let webview = source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+        .ok_or("The YouTube player is no longer available")?;
+    let player_command = |name: &str, arguments: &str| {
+        format!("window.presentaCommand?.('{name}',{arguments})")
+    };
+    let script = match action.as_str() {
+        "playVideo" => player_command("playVideo", "[]"),
+        "pauseVideo" => player_command("pauseVideo", "[]"),
+        "mute" => player_command("mute", "[]"),
+        "unMute" => player_command("unMute", "[]"),
+        "seekTo" => {
+            let seconds = value.filter(|number| number.is_finite()).unwrap_or(0.0).max(0.0);
+            player_command("seekTo", &format!("[{seconds},true]"))
+        }
+        "seekBy" => {
+            let seconds = value.filter(|number| number.is_finite()).unwrap_or(0.0).clamp(-600.0, 600.0);
+            format!(
+                "(()=>{{const target=Math.max(0,(window.presentaCurrentTime||0)+({seconds}));{}}})()",
+                player_command("seekTo", "[target,true]")
+            )
+        }
+        _ => return Err("Unsupported YouTube player action".into()),
+    };
+    webview.eval(&script).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn close_youtube_embed(source_webview: tauri::Webview, label: String) -> Result<(), String> {
+    validate_youtube_label(&label)?;
+    if let Some(webview) = source_webview
+        .window()
+        .webviews()
+        .into_iter()
+        .find(|webview| webview.label() == label)
+    {
+        webview.close().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1392,7 +1567,11 @@ pub fn run() {
             write_binary,
             copy_video,
             transcode_video,
-            open_microphone_settings
+            open_microphone_settings,
+            create_youtube_embed,
+            position_youtube_embed,
+            control_youtube_embed,
+            close_youtube_embed
         ])
         .run(tauri::generate_context!())
         .expect("error while running Presenta");

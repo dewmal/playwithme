@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ExternalLink, FastForward, Maximize2, Minimize2, Pause, Play, Rewind, RotateCcw, Volume2, VolumeX } from "lucide-react";
 
 interface YouTubeVideo {
@@ -35,14 +36,23 @@ function parseYouTubeUrl(source: string): YouTubeVideo | null {
 export function YouTubeEmbed({ source }: { source: string }) {
   const video = useMemo(() => parseYouTubeUrl(source), [source]);
   const frame = useRef<HTMLIFrameElement>(null);
+  const frameHost = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
+  const nativeLabel = useRef<string | null>(null);
   const currentTime = useRef(video?.start ?? 0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [fillSlide, setFillSlide] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [nativeError, setNativeError] = useState("");
+  const nativePlayer = isTauri() && (/Macintosh|Mac OS X/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform));
 
   const command = (func: string, args: unknown[] = []) => {
+    if (nativePlayer && nativeLabel.current) {
+      const value = typeof args[0] === "number" ? args[0] : undefined;
+      invoke("control_youtube_embed", { label: nativeLabel.current, action: func, value }).catch(() => undefined);
+      return;
+    }
     frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "https://www.youtube-nocookie.com");
   };
   const togglePlayback = () => {
@@ -54,8 +64,63 @@ export function YouTubeEmbed({ source }: { source: string }) {
     setMuted((value) => !value);
   };
   const seekRelative = (seconds: number) => {
-    command("seekTo", [Math.max(0, currentTime.current + seconds), true]);
+    if (nativePlayer) command("seekBy", [seconds]);
+    else command("seekTo", [Math.max(0, currentTime.current + seconds), true]);
   };
+
+  useEffect(() => {
+    if (!nativePlayer || !video || !frameHost.current) return;
+    const label = `youtube-${video.id}-${crypto.randomUUID().replace(/[^a-z\d]/gi, "").slice(0, 20)}`;
+    nativeLabel.current = label;
+    let disposed = false;
+    let ready = false;
+    const bounds = () => {
+      const rect = frameHost.current?.getBoundingClientRect();
+      return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+    };
+    const syncBounds = () => {
+      const next = bounds();
+      if (!ready || !next) return;
+      invoke("position_youtube_embed", { label, bounds: next }).catch(() => undefined);
+    };
+    const initialBounds = bounds();
+    if (!initialBounds) return;
+    invoke("create_youtube_embed", { label, videoId: video.id, start: video.start, bounds: initialBounds })
+      .then(() => {
+        ready = true;
+        if (disposed) invoke("close_youtube_embed", { label }).catch(() => undefined);
+        else syncBounds();
+      })
+      .catch((error) => {
+        if (!disposed) setNativeError(error instanceof Error ? error.message : String(error));
+      });
+    const observer = new ResizeObserver(syncBounds);
+    observer.observe(frameHost.current);
+    window.addEventListener("resize", syncBounds);
+    window.addEventListener("scroll", syncBounds, true);
+    return () => {
+      disposed = true;
+      ready = false;
+      observer.disconnect();
+      window.removeEventListener("resize", syncBounds);
+      window.removeEventListener("scroll", syncBounds, true);
+      if (nativeLabel.current === label) nativeLabel.current = null;
+      invoke("close_youtube_embed", { label }).catch(() => undefined);
+    };
+  }, [fillSlide, fullscreen, nativePlayer, video?.id, video?.start]);
+
+  useEffect(() => {
+    if (!nativePlayer || !nativeLabel.current) return;
+    const animationFrame = requestAnimationFrame(() => {
+      const rect = frameHost.current?.getBoundingClientRect();
+      if (!rect || !nativeLabel.current) return;
+      invoke("position_youtube_embed", {
+        label: nativeLabel.current,
+        bounds: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      }).catch(() => undefined);
+    });
+    return () => cancelAnimationFrame(animationFrame);
+  }, [fillSlide, fullscreen, nativePlayer]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -78,7 +143,8 @@ export function YouTubeEmbed({ source }: { source: string }) {
 
   if (!video) return <div className="youtube-error">Use a valid YouTube, Shorts, or youtu.be URL.</div>;
   const watchUrl = `https://www.youtube.com/watch?v=${video.id}${video.start ? `&t=${video.start}s` : ""}`;
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${video.id}?enablejsapi=1&playsinline=1&rel=0${video.start ? `&start=${video.start}` : ""}`;
+  const browserOrigin = /^https?:$/.test(window.location.protocol) ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${video.id}?enablejsapi=1&playsinline=1&rel=0${browserOrigin}${video.start ? `&start=${video.start}` : ""}`;
   const setSeekOffset = (seconds: number) => {
     seekRelative(seconds);
   };
@@ -88,16 +154,20 @@ export function YouTubeEmbed({ source }: { source: string }) {
   };
 
   return <div ref={container} className={`youtube-embed${fillSlide ? " youtube-fill-slide" : ""}`}>
-    <div className="youtube-frame">
+    <div ref={frameHost} className="youtube-frame">
       <img className="youtube-poster" src={`https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="YouTube video preview" />
-      <iframe ref={frame} src={embedUrl} title="Embedded YouTube video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen onLoad={() => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: video.id }), "https://www.youtube-nocookie.com")} />
+      {!nativePlayer && <iframe ref={frame} src={embedUrl} title="Embedded YouTube video" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen onLoad={() => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: video.id }), "https://www.youtube-nocookie.com")} />}
+      {nativeError && <div className="youtube-native-error"><b>Could not load the embedded player</b><small>{nativeError}</small><a href={watchUrl} target="_blank" rel="noreferrer">Watch on YouTube</a></div>}
     </div>
     <div className="youtube-controls" role="toolbar" aria-label="Video controls" onPointerDown={(event) => event.stopPropagation()}>
-      <button type="button" onClick={() => { command("seekTo", [video.start, true]); setPlaying(false); command("pauseVideo"); }} title="Restart video"><RotateCcw /></button>
-      <button type="button" onClick={() => setSeekOffset(-10)} title="Back 10 seconds"><Rewind /></button>
-      <button type="button" className="youtube-play" onClick={togglePlayback} title={playing ? "Pause video" : "Play video"}>{playing ? <Pause /> : <Play />}</button>
-      <button type="button" onClick={() => setSeekOffset(10)} title="Forward 10 seconds"><FastForward /></button>
-      <button type="button" onClick={toggleMute} title={muted ? "Unmute video" : "Mute video"}>{muted ? <VolumeX /> : <Volume2 />}</button>
+      {!nativePlayer && <>
+        <button type="button" onClick={() => { command("seekTo", [video.start, true]); setPlaying(false); command("pauseVideo"); }} title="Restart video"><RotateCcw /></button>
+        <button type="button" onClick={() => setSeekOffset(-10)} title="Back 10 seconds"><Rewind /></button>
+        <button type="button" className="youtube-play" onClick={togglePlayback} title={playing ? "Pause video" : "Play video"}>{playing ? <Pause /> : <Play />}</button>
+        <button type="button" onClick={() => setSeekOffset(10)} title="Forward 10 seconds"><FastForward /></button>
+        <button type="button" onClick={toggleMute} title={muted ? "Unmute video" : "Mute video"}>{muted ? <VolumeX /> : <Volume2 />}</button>
+      </>}
+      {nativePlayer && <small>Playback controls are inside the video</small>}
       <span />
       <a href={watchUrl} target="_blank" rel="noreferrer" title="Open on YouTube"><ExternalLink /></a>
       <button type="button" onClick={() => setFillSlide((value) => !value)} title={fillSlide ? "Restore video size" : "Fill slide"}>{fillSlide ? <Minimize2 /> : <Maximize2 />}<b>{fillSlide ? "Restore" : "Fill slide"}</b></button>
